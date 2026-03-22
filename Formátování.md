@@ -1,3 +1,3 @@
-Rozklikni editaci pro ukázku Markdown
-#Nadpis 1. úrovně
-##Nadpis 2. úrovně
+Rozklikni editaci pro ukázku Markdown <br>
+#Nadpis 1. úrovně <br>
+##Nadpis 2. úrovně <br>
