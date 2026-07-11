@@ -1,0 +1,2680 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROOT-X: Taktický simulátor jeskyně</title>
+    <!-- Tailwind CSS pro moderní UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Globální sjednocení fontu na Times New Roman pro eliminaci chyb s diakritikou */
+        * {
+            font-family: 'Times New Roman', Times, serif !important;
+        }
+        
+        body {
+            background-color: #06070d;
+        }
+        
+        /* Sci-fi efekty */
+        .neon-border {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.15);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+        .neon-glow-cyan {
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+        }
+        .neon-glow-rose {
+            box-shadow: 0 0 20px rgba(244, 63, 94, 0.4);
+        }
+
+        /* Tiskové nastavení 1:1 pro iRobot Root */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-container {
+                display: block !important;
+            }
+            .print-page {
+                display: flex !important;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                width: 210mm;
+                height: 297mm;
+                page-break-after: always;
+                box-sizing: border-box;
+                background: white !important;
+                color: black !important;
+                padding: 15mm;
+            }
+            .tile-1-1 {
+                width: 15cm !important;
+                height: 15cm !important;
+                border: 2px dashed #111111 !important;
+                position: relative;
+                box-sizing: border-box;
+                background: white !important;
+                display: flex !important;
+                justify-content: center;
+                align-items: center;
+            }
+            
+            /* VYNUCENÍ BAREVNÉHO TISKU POZADÍ (Krystalů) */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
+    </style>
+</head>
+<body class="text-slate-200 overflow-x-hidden min-h-screen">
+
+    <!-- Skrytý souborový vstup pro import sektorů -->
+    <input type="file" id="import-file-selector" accept=".json" class="hidden" onchange="handleFileImport(event)">
+
+    <!-- 1. ÚVODNÍ TERMINÁL (Pojmenování vozidla) -->
+    <div id="intro-modal" class="fixed inset-0 bg-[#040508] z-50 flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-cyan-500/40 rounded-2xl p-8 space-y-6 text-center neon-border">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-cyan-400 font-bold uppercase">Systém záchranné mise Xylos-7</span>
+                <h2 class="text-2xl text-white uppercase tracking-wider">NAVÁZÁNÍ SPOJENÍ</h2>
+                <div class="h-0.5 w-24 bg-cyan-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed">
+                Nouzový modul vědecké expedice zapadl do hlubokých krystalických jeskyní. Pro inicializaci autonomního záchranného vozítka zadejte jeho identifikační kód (jméno).
+            </p>
+
+            <div class="space-y-2 text-left">
+                <label class="block text-xs text-cyan-400 uppercase tracking-widest">Kód záchranného vozítka:</label>
+                <input type="text" id="vehicle-name-input" value="R1" class="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 px-4 text-white tracking-widest focus:outline-none focus:ring-2 focus:ring-cyan-500 text-center uppercase">
+                <span id="name-error" class="text-rose-500 text-xs hidden">Chyba: Musíte zadat platný název vozítka!</span>
+            </div>
+
+            <button onclick="confirmVehicleName()" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-3 px-6 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all uppercase tracking-wider text-sm">
+                Inicializovat misi
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. VOLBA HERNÍHO REŽIMU (Kampaň vs Sandbox Setup vs Souborový import) -->
+    <div id="mode-select-modal" class="fixed inset-0 bg-[#040508] z-40 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-cyan-500/40 rounded-2xl p-8 space-y-6 text-center neon-border">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-cyan-400 font-bold uppercase">IDENTIFIKACE ÚSPĚŠNÁ</span>
+                <h2 class="text-2xl text-white uppercase tracking-wider">ZVOLTE REŽIM MISÍ</h2>
+                <div class="h-0.5 w-24 bg-cyan-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed">
+                Systémy vozidla <strong id="mode-select-rover-name" class="text-cyan-400 font-serif"></strong> jsou připraveny k nasazení. Zvolte operační program:
+            </p>
+
+            <div class="grid grid-cols-1 gap-4">
+                <!-- Tlačítko Kampaň -->
+                <button onclick="selectCampaignMode()" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-4 px-6 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all uppercase tracking-wider text-sm">
+                    Kampaň (Připravené výzvy)
+                </button>
+                
+                <!-- Tlačítko Sandbox -->
+                <button onclick="openSandboxSetup()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold py-4 px-6 rounded-lg transition-all uppercase tracking-wider text-sm">
+                    Sandbox (Tvořit vlastní level)
+                </button>
+
+                <!-- NOVÉ TLAČÍTKO: Nahrát Sektor ze souboru -->
+                <button onclick="triggerFileImport()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-6 rounded-lg shadow-[0_0_15px_rgba(79,70,229,0.3)] transition-all uppercase tracking-wider text-sm font-serif">
+                    Nahrát Sektor ze souboru
+                </button>
+
+                <!-- Tlačítko Načíst Vlastní Level z prohlížeče (pokud existuje v localStorage) -->
+                <button id="btn-play-custom" onclick="playCustomLevel()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 px-6 rounded-lg shadow-[0_0_15px_rgba(217,119,6,0.3)] transition-all uppercase tracking-wider text-sm hidden font-serif">
+                    Hrát vlastní uložený Sektor
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. SETUP SANDBOXU (Výběr velikosti mapy) -->
+    <div id="sandbox-setup-modal" class="fixed inset-0 bg-[#040508] z-50 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-cyan-500/40 rounded-2xl p-8 space-y-6 text-center neon-border" style="box-shadow: 0 0 15px rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3);">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-amber-500 font-bold uppercase">Sandbox Konfigurátor</span>
+                <h2 class="text-2xl text-white uppercase tracking-wider">VELIKOST JESKYNĚ</h2>
+                <div class="h-0.5 w-24 bg-amber-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed">
+                Zvolte požadované rozměry jeskynního sektoru pro generování nového plánu:
+            </p>
+
+            <div class="grid grid-cols-2 gap-3 font-mono">
+                <button onclick="startSandbox(4)" class="bg-slate-900 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-500 text-white hover:text-amber-400 font-bold py-3 px-4 rounded transition-all">4 x 4</button>
+                <button onclick="startSandbox(5)" class="bg-slate-900 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-500 text-white hover:text-amber-400 font-bold py-3 px-4 rounded transition-all">5 x 5</button>
+                <button onclick="startSandbox(6)" class="bg-slate-900 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-500 text-white hover:text-amber-400 font-bold py-3 px-4 rounded transition-all">6 x 6</button>
+                <button onclick="startSandbox(7)" class="bg-slate-900 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-500 text-white hover:text-amber-400 font-bold py-3 px-4 rounded transition-all">7 x 7</button>
+            </div>
+
+            <button onclick="closeSandboxSetup()" class="text-slate-500 text-xs uppercase underline block mx-auto font-serif">Zpět k volbě režimů</button>
+        </div>
+    </div>
+
+    <!-- PŘÍBĚHOVÝ BRIEFING KAMPANĚ -->
+    <div id="story-modal" class="fixed inset-0 bg-[#030407] z-50 hidden flex items-center justify-center p-4">
+        <div class="max-w-lg w-full bg-slate-950 border-2 border-cyan-500/30 rounded-2xl p-8 space-y-6 text-slate-300 neon-border">
+            <div class="text-center space-y-1">
+                <span class="text-[10px] tracking-widest text-purple-400 font-bold uppercase">PŘÍCHOZÍ DEPEŠE – VELITELSTVÍ ASTRAEA</span>
+                <h3 class="text-xl text-white uppercase tracking-wider">BRIEFING MISE</h3>
+                <div class="h-0.5 w-16 bg-cyan-500 mx-auto"></div>
+            </div>
+
+            <div class="space-y-4 text-xs sm:text-sm leading-relaxed text-slate-400 font-serif">
+                <p>
+                    Inženýre! Na planetě <strong class="text-cyan-400">Xylos-7</strong> uvízla posádka vědecké lodi <strong class="text-white">Astraea</strong>. Rádiové spojení selhalo a poslední známky nouzového signálu přicházejí ze starého jeskynního systému.
+                </p>
+                <p>
+                    Do jeskyně vysíláme záchranné autonomní vozítko <strong id="story-rover-name" class="text-cyan-400 font-bold font-serif">R1</strong>. Aby budoucí záchranné lidské týmy věděly, kudy bezpečně projít, musí váš rover na křižovatkách zanechávat <strong class="text-emerald-400 font-bold">barevné navigační krystaly (stopy)</strong>. Tyto stopy vysílají subprostorový signál, který roveru říká, kam zahnout.
+                </p>
+                <p>
+                    Váš úkol: Naprogramujte reakci senzorů na barvy (Krok 1) a následně rozmístěte barevné krystaly po jeskyni tak, aby rover bezpečně prokličkoval k nouzovému modulu <strong>✕ (CÍL)</strong>. Máte omezenou operační paměť na celkové množství krystalů, proto pracujte co nejefektivněji!
+                </p>
+            </div>
+
+            <button onclick="enterCaveSimulator()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg shadow-[0_0_15px_rgba(155,93,229,0.4)] transition-all uppercase tracking-wider text-sm font-serif">
+                Vstoupit do jeskyně
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL PRO SEKTOR 2 (Představení fialové barvy a cyklů) -->
+    <div id="sector2-intro-modal" class="fixed inset-0 bg-[#040508]/95 z-50 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-purple-500/40 rounded-2xl p-8 space-y-6 text-center neon-border" style="box-shadow: 0 0 15px rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.3);">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-purple-400 font-bold uppercase font-serif">Nová technologie odemčena</span>
+                <h2 class="text-2xl text-white uppercase tracking-wider font-serif">🚨 DETEKCE ANOMÁLIE: CYKLY!</h2>
+                <div class="h-0.5 w-24 bg-purple-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed font-serif text-left">
+                Senzory záchranného vozidla <strong class="text-cyan-400">ROOT-X</strong> právě zachytily nové frekvenční vlnění! Od tohoto Sektoru 2 se vám zpřístupňují <strong class="text-purple-400 font-bold font-serif">fialové navigační krystaly</strong>.
+            </p>
+            <p class="text-slate-400 text-sm leading-relaxed font-serif text-left">
+                Tato speciální barva funguje jako <strong class="text-emerald-400 font-bold font-serif">algoritmický cyklus</strong>. Umožňuje nadefinovat opakovaný pohyb (např. jízdu o více polí dopředu za sebou). 
+            </p>
+            <p class="text-slate-400 text-sm leading-relaxed font-serif text-left">
+                Využitím jednoho fialového krystalu tak můžete urazit delší vzdálenost, ale v drahocenné mezipaměti robota tím spotřebujete <strong class="text-cyan-400 font-serif">pouze jednu jedinou úlohu</strong>!
+            </p>
+
+            <button onclick="dismissSector2Intro()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-all uppercase tracking-wider text-sm font-serif">
+                Rozumím, zahájit Sektor 2
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL PRO ÚSPĚŠNÉ ULOŽENÍ LEVELU V SANDBOXU -->
+    <div id="save-success-modal" class="fixed inset-0 bg-slate-950/90 z-50 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-emerald-500/40 rounded-2xl p-8 space-y-6 text-center neon-border" style="box-shadow: 0 0 15px rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3);">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-emerald-400 font-bold uppercase font-serif">Editor Sektoru</span>
+                <h2 class="text-2xl text-white uppercase tracking-wider font-serif">💾 SEKTOR ULOŽEN!</h2>
+                <div class="h-0.5 w-24 bg-emerald-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed font-serif">
+                Váš nově vytvořený Sektor byl úspěšně nahrán do paměťového modulu vozidla. Chcete si jej nyní vyzkoušet vyřešit a zachránit posádku?
+            </p>
+
+            <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="dismissSaveSuccess(true)" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded transition-all uppercase text-xs tracking-wider font-serif">
+                        Spustit hru (Mise)
+                    </button>
+                    <button onclick="dismissSaveSuccess(false)" class="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded transition-all uppercase text-xs tracking-wider font-serif">
+                        Pokračovat v úpravách
+                    </button>
+                </div>
+                <button onclick="downloadCustomLevelFile()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded transition-all uppercase text-xs tracking-wider font-serif flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    Stáhnout Sektor (.json)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL HAVÁRIE -->
+    <div id="crash-modal" class="fixed inset-0 bg-slate-950/95 z-50 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-rose-500/40 rounded-2xl p-8 space-y-6 text-center neon-glow-rose">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-rose-500 font-bold uppercase">KRITICKÁ ANOMÁLIE</span>
+                <h2 class="text-3xl text-white uppercase tracking-wider font-serif">🚨 HAVÁROVAL JSI!</h2>
+                <div class="h-0.5 w-24 bg-rose-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed font-serif">
+                Vozítko <strong id="crash-rover-name" class="text-cyan-400 font-bold font-serif"></strong> narazilo do neprostupné jeskynní stěny nebo vybočilo z mapy! Systémy byly nouzově odpojeny.
+            </p>
+
+            <button onclick="handleCrashRestart()" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-6 rounded-lg shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all uppercase tracking-wider text-sm font-serif">
+                Upravit trasu / kód
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL VYBITÍ BATERIE -->
+    <div id="battery-modal" class="fixed inset-0 bg-slate-950/95 z-50 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-amber-500/40 rounded-2xl p-8 space-y-6 text-center">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-amber-500 font-bold uppercase">Nouzový stav</span>
+                <h2 class="text-3xl text-white uppercase tracking-wider">⚠️ ZTRÁTA SIGNÁLU!</h2>
+                <div class="h-0.5 w-24 bg-amber-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm leading-relaxed font-serif">
+                Procesor vozítka překročil maximální povolený počet výpočetních kroků (50) dříve, než dosáhl nouzového modulu. Trasa nejspíše obsahuje nekonečnou smyčku!
+            </p>
+
+            <button onclick="handleCrashRestart()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-6 rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all uppercase tracking-wider text-sm font-serif">
+                Dobít baterii & upravit trasu
+            </button>
+        </div>
+    </div>
+
+    <!-- VÍTĚZNÝ MODAL -->
+    <div id="victory-modal" class="fixed inset-0 bg-slate-950/90 z-40 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-950 border-2 border-emerald-500/40 rounded-2xl p-8 space-y-6 text-center">
+            <div class="space-y-2">
+                <span class="text-xs tracking-widest text-emerald-400 font-bold uppercase">Sektor vyčištěn</span>
+                <h2 class="text-3xl text-white uppercase tracking-wider font-serif">MISE DOKONČENA!</h2>
+                <div class="h-0.5 w-24 bg-emerald-500 mx-auto"></div>
+            </div>
+            
+            <p class="text-slate-400 text-sm font-serif">
+                Vozítko <strong id="victory-rover-name" class="text-cyan-400 font-bold font-serif">R1</strong> úspěšně prošlo labyrintem a dosáhlo nouzového modulu. Nyní musíte nalézt další posádku v těžším Sektoru!
+            </p>
+
+            <div class="flex gap-3">
+                <button onclick="closeVictoryModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded transition-all uppercase text-xs tracking-wider font-serif">
+                    Zůstat v tomto levelu
+                </button>
+                <button id="next-level-btn" onclick="goToNextLevel()" class="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded transition-all uppercase text-xs tracking-wider font-serif">
+                    Další Sektor
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HLAVNÍ DIGITÁLNÍ ROZHRANÍ -->
+    <div id="main-interface" class="no-print min-h-screen p-4 md:p-8 flex flex-col justify-between hidden">
+        
+        <!-- Header -->
+        <header class="border-b border-cyan-500/20 pb-4 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <span class="text-xs tracking-widest text-cyan-400 font-bold uppercase">AUTONOMNÍ VIRTUÁLNÍ PROSTŘEDÍ</span>
+                <h1 class="text-3xl text-white tracking-wider uppercase font-serif">ROVER: <span id="vehicle-display-name" class="text-cyan-400">R1</span></h1>
+                <p class="text-sm text-emerald-400 tracking-widest uppercase font-serif">Taktický jeskynní simulátor • Planeta Xylos-7</p>
+            </div>
+            
+            <!-- Volba levelů -->
+            <div id="level-selector-container" class="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1.5 rounded-lg">
+                <span class="text-xs text-slate-400 px-3 uppercase font-serif">Sektor jeskyně:</span>
+                <div class="flex gap-1">
+                    <button id="lvl-1-btn" onclick="selectLevel(1)" class="w-8 h-8 rounded text-xs font-bold transition-all bg-cyan-500 text-slate-950">1</button>
+                    <button id="lvl-2-btn" onclick="selectLevel(2)" class="w-8 h-8 rounded text-xs font-bold transition-all bg-slate-850 hover:bg-slate-800 text-slate-300">2</button>
+                    <button id="lvl-3-btn" onclick="selectLevel(3)" class="w-8 h-8 rounded text-xs font-bold transition-all bg-slate-850 hover:bg-slate-800 text-slate-300">3</button>
+                    <button id="lvl-4-btn" onclick="selectLevel(4)" class="w-8 h-8 rounded text-xs font-bold transition-all bg-slate-850 hover:bg-slate-800 text-slate-300">4</button>
+                </div>
+            </div>
+
+            <!-- Tlačítko návratu z Sandboxu -->
+            <button id="sandbox-back-btn" onclick="backToModeSelect()" class="hidden bg-slate-900 border border-slate-700 hover:border-amber-500 text-amber-400 font-bold text-xs px-4 py-2 rounded uppercase transition-all font-serif">
+                Zpět na režimy
+            </button>
+        </header>
+
+        <!-- Hlavní pracovní plocha -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- LEVÝ SLOUPEC -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- POKYNY PRO POSÁDKU -->
+                <div id="campaign-instructions-card" class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-4">
+                    <details class="group cursor-pointer">
+                        <summary class="flex justify-between items-center select-none">
+                            <div>
+                                <span class="text-[10px] text-emerald-400 tracking-widest block uppercase font-serif">Pracovní list výsadku</span>
+                                <h2 class="text-white text-md tracking-wider uppercase inline-block font-bold font-serif font-serif">📋 Pokyny pro posádku</h2>
+                            </div>
+                            <span class="text-cyan-400 font-bold transition-transform group-open:rotate-180">▼</span>
+                        </summary>
+                        
+                        <div class="text-xs text-slate-400 space-y-3 leading-relaxed mt-4 border-t border-slate-800/60 pt-4 cursor-default font-serif" onclick="event.stopPropagation()">
+                            <p class="font-bold text-slate-300">Inženýři, vaše záchranná mise má jasně daný postup:</p>
+                            
+                            <div class="flex gap-2 items-start">
+                                <span class="w-5 h-5 rounded-full bg-slate-950 border border-cyan-500/40 flex items-center justify-center text-[10px] text-cyan-400 shrink-0 mt-0.5 font-sans font-bold">1</span>
+                                <p>
+                                    <strong class="text-cyan-400 uppercase">Definice senzorů:</strong> V bloku <em>"Krok 1"</em> (vpravo nahoře) nadefinujte, jak má vozidlo reagovat na jednotlivé barvy krystalů. Výchozí hodnota je "Vyberte...".
+                                </p>
+                            </div>
+
+                            <div class="flex gap-2 items-start">
+                                <span class="w-5 h-5 rounded-full bg-slate-950 border border-cyan-500/40 flex items-center justify-center text-[10px] text-cyan-400 shrink-0 mt-0.5 font-sans font-bold">2</span>
+                                <p>
+                                    <strong class="text-cyan-400 uppercase">Rozmístění krystalů:</strong> Prozkoumejte mapu jeskyně. Černé bloky jsou překážky. <strong class="text-white">Levým kliknutím myši</strong> na Sektor položíte nebo změníte barvu krystalu (Červená ➔ Zelená ➔ Modrá ➔ Žlutá ➔ Fialová ➔ Oranžová ➔ Šedá ➔ Prázdný). <strong class="text-white">Pravým kliknutím myši</strong> krystal okamžitě smažete.
+                                </p>
+                            </div>
+
+                            <div class="flex gap-2 items-start">
+                                <span class="w-5 h-5 rounded-full bg-slate-950 border border-cyan-500/40 flex items-center justify-center text-[10px] text-cyan-400 shrink-0 mt-0.5 font-sans font-bold">3</span>
+                                <p>
+                                    <strong class="text-cyan-400 uppercase">Kapacita paměti:</strong> Každý položený krystal stojí jedno volné místo v paměti vozidla. Limit paměti se zobrazuje v záhlaví mapy a nelze ho překročit!
+                                </p>
+                            </div>
+
+                            <div class="flex gap-2 items-start">
+                                <span class="w-5 h-5 rounded-full bg-slate-950 border border-cyan-500/40 flex items-center justify-center text-[10px] text-cyan-400 shrink-0 mt-0.5 font-sans font-bold">4</span>
+                                <p>
+                                    <strong class="text-cyan-400 uppercase">Startovní navádění:</strong> Umístěte krystal přímo na startovní pozici <strong class="text-white font-bold">A1</strong> (pod rover), aby vozidlo hned při startu vědělo, jakým směrem vyrazit.
+                                </p>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- SANDBOX PANEL: Nástroje pro kreslení mapy -->
+                <div id="sandbox-editor-card" class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-4 hidden">
+                    <div class="border-b border-slate-800 pb-2">
+                        <span class="text-[10px] text-amber-500 tracking-widest block uppercase font-bold font-serif font-serif">Sandbox Editor</span>
+                        <h2 class="text-white text-md tracking-wider uppercase font-bold font-serif">🛠️ Tvorba jeskynního plánu</h2>
+                    </div>
+
+                    <div class="space-y-3">
+                        <span class="block text-xs text-slate-400 uppercase font-bold font-serif font-serif">Zvolte prvek k zakreslení:</span>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button id="tool-start" onclick="setSandboxTool('start')" class="p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif font-serif">START</button>
+                            <button id="tool-crew" onclick="setSandboxTool('crew')" class="p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif font-serif">CÍL</button>
+                            <button id="tool-wall" onclick="setSandboxTool('wall')" class="p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif font-serif">SKÁLA</button>
+                        </div>
+                        <p id="tool-desc" class="text-[10px] text-slate-500 leading-relaxed uppercase font-serif">
+                            Aktivní prvek: Kliknutím do mapy přesunete startovní pozici vozidla.
+                        </p>
+                    </div>
+
+                    <div id="rover-initial-dir-container" class="space-y-2 border-t border-slate-800/60 pt-3">
+                        <span class="block text-xs text-slate-400 uppercase font-bold font-serif">Počáteční směr roveru:</span>
+                        <div class="flex gap-1 justify-center">
+                            <button id="start-dir-N" onclick="setInitialDir('N')" class="px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs font-mono">SEVER (↑)</button>
+                            <button id="start-dir-S" onclick="setInitialDir('S')" class="px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs font-mono">JIH (↓)</button>
+                            <button id="start-dir-E" onclick="setInitialDir('E')" class="px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs font-mono">VÝCHOD (→)</button>
+                            <button id="start-dir-W" onclick="setInitialDir('W')" class="px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs font-mono">ZÁPAD (←)</button>
+                        </div>
+                        <span class="text-[9px] text-slate-500 uppercase block text-center font-serif">Filtrováno tak, aby robot nehleděl do stěny nebo mimo mapu.</span>
+                    </div>
+
+                    <div class="space-y-2 border-t border-slate-800/60 pt-3">
+                        <span class="block text-xs text-slate-400 uppercase font-bold font-serif font-serif">Povolené krystaly v simulaci:</span>
+                        <div class="grid grid-cols-3 gap-2 text-[10px] uppercase font-mono">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-red" checked onchange="toggleColorAllowance('red')" class="accent-cyan-500"> <span class="text-red-400 font-serif font-serif">Červená</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-green" checked onchange="toggleColorAllowance('green')" class="accent-cyan-500"> <span class="text-emerald-400 font-serif font-serif">Zelená</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-blue" checked onchange="toggleColorAllowance('blue')" class="accent-cyan-500"> <span class="text-blue-400 font-serif font-serif">Modrá</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-yellow" checked onchange="toggleColorAllowance('yellow')" class="accent-cyan-500"> <span class="text-yellow-400 font-serif font-serif">Žlutá</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-purple" checked onchange="toggleColorAllowance('purple')" class="accent-cyan-500"> <span class="text-purple-400 font-serif font-serif">Fialová</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-orange" checked onchange="toggleColorAllowance('orange')" class="accent-cyan-500"> <span class="text-orange-400 font-serif font-serif">Oranžová</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="allow-gray" checked onchange="toggleColorAllowance('gray')" class="accent-cyan-500"> <span class="text-slate-400 font-serif font-serif">Šedá</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- TLAČÍTKO PRO PŘÍMÉ STAŽENÍ SEKTORU ZE SANDBOX PANELU -->
+                    <div class="space-y-2 border-t border-slate-800/60 pt-3">
+                        <button onclick="downloadCustomLevelFileDirect()" class="w-full bg-indigo-950/40 border border-indigo-500/30 hover:border-indigo-400 text-indigo-300 hover:text-white font-bold py-2.5 px-4 rounded transition-all uppercase text-xs tracking-wider font-serif flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            Stáhnout Sektor (.json)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- GLOBÁLNÍ INSTRUKCE PRO KRESLENÍ -->
+                <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                        <h2 class="text-cyan-400 text-sm tracking-wider uppercase font-serif font-bold">Práce s krystaly na mapě</h2>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-950/80 p-3 rounded border border-slate-800/80 text-center">
+                            <span class="block text-xs font-bold text-cyan-400 mb-1 font-serif">LEVÝ KLIK MYŠÍ</span>
+                            <span class="text-[10px] text-slate-400 uppercase leading-relaxed font-serif">
+                                Změna barvy krystalu:<br>
+                                <span class="text-red-400 font-serif">Červená</span> ➔ <span class="text-emerald-400 font-serif">Zelená</span> ➔ <span class="text-blue-400 font-serif">Modrá</span> ➔ <span class="text-yellow-400 font-serif">Žlutá</span> ➔ <span class="text-purple-400 font-serif">Fialová</span> ➔ <span class="text-orange-400 font-serif">Oranžová</span> ➔ <span class="text-slate-400 font-serif">Šedá</span> ➔ Smazat
+                            </span>
+                        </div>
+                        <div class="bg-slate-950/80 p-3 rounded border border-slate-800/80 text-center flex flex-col justify-center">
+                            <span class="block text-xs font-bold text-rose-400 mb-1 font-serif">PRAVÝ KLIK MYŠÍ</span>
+                            <span class="text-[10px] text-slate-400 uppercase font-serif">
+                                Okamžitě vymaže krystal ze Sektoru.
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- PRAVÝ SLOUPEC -->
+            <div class="lg:col-span-7 space-y-6 flex flex-col items-center">
+                
+                <!-- KROK 1: Programování barevných krystalů (SENZORY) -->
+                <div id="action-programming-card" class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl w-full space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                        <h2 class="text-cyan-400 text-sm tracking-wider uppercase font-bold font-serif font-serif font-serif">Krok 1: Programování krystalů (Senzory)</h2>
+                        <span class="text-[10px] bg-cyan-950/60 text-cyan-400 px-2 py-0.5 rounded uppercase font-bold font-serif font-bold">Algoritmus</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Červená -->
+                        <div id="sensor-row-red" class="flex items-center justify-between gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 font-serif">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300">Červená:</span>
+                            </div>
+                            <select id="action-red" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-36 font-serif">
+                                <option value="" selected disabled>Vyberte...</option>
+                                <option value="forward">Dopředu</option>
+                                <option value="left">Doleva (+dopředu)</option>
+                                <option value="right">Doprava (+dopředu)</option>
+                                <option value="backward">Dozadu</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Zelená -->
+                        <div id="sensor-row-green" class="flex items-center justify-between gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 font-serif">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300">Zelená:</span>
+                            </div>
+                            <select id="action-green" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-36 font-serif">
+                                <option value="" selected disabled>Vyberte...</option>
+                                <option value="forward">Dopředu</option>
+                                <option value="left">Doleva (+dopředu)</option>
+                                <option value="right">Doprava (+dopředu)</option>
+                                <option value="backward">Dozadu</option>
+                            </select>
+                        </div>
+
+                        <!-- Modrá -->
+                        <div id="sensor-row-blue" class="flex items-center justify-between gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 font-serif">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300">Modrá:</span>
+                            </div>
+                            <select id="action-blue" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-36 font-serif">
+                                <option value="" selected disabled>Vyberte...</option>
+                                <option value="forward">Dopředu</option>
+                                <option value="left">Doleva (+dopředu)</option>
+                                <option value="right">Doprava (+dopředu)</option>
+                                <option value="backward">Dozadu</option>
+                            </select>
+                        </div>
+
+                        <!-- Žlutá -->
+                        <div id="sensor-row-yellow" class="flex items-center justify-between gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 font-serif">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-yellow-500 shadow-[0_0_8px_rgba(245,158,11,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300 font-bold font-serif font-serif">Žlutá:</span>
+                            </div>
+                            <select id="action-yellow" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-36 font-serif">
+                                <option value="" selected disabled>Vyberte...</option>
+                                <option value="forward">Dopředu</option>
+                                <option value="left">Doleva (+dopředu)</option>
+                                <option value="right">Doprava (+dopředu)</option>
+                                <option value="backward">Dozadu</option>
+                            </select>
+                        </div>
+
+                        <!-- Fialová (Cykly) -->
+                        <div id="sensor-row-purple" class="flex items-center justify-between gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 col-span-1 md:col-span-2 font-serif font-serif font-serif font-serif">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300 font-bold font-serif">Fialová (Cykly):</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <select id="action-purple" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-32 font-serif">
+                                    <option value="" selected disabled>Vyberte...</option>
+                                    <option value="forward">Dopředu</option>
+                                    <option value="left">Doleva (+dopředu)</option>
+                                    <option value="right">Doprava (+dopředu)</option>
+                                    <option value="backward">Dozadu</option>
+                                </select>
+                                <select id="loop-purple" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-20 font-serif">
+                                    <option value="1">1x</option>
+                                    <option value="2">2x</option>
+                                    <option value="3">3x</option>
+                                    <option value="4">4x</option>
+                                    <option value="5" selected>5x</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Šedá (Cykly) -->
+                        <div id="sensor-row-gray" class="flex items-center justify-between gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 col-span-1 md:col-span-2 font-serif font-serif font-serif font-serif font-serif font-serif">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-slate-500 shadow-[0_0_8px_rgba(148,163,184,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300 font-bold font-serif font-serif">Šedá (Cykly):</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <select id="action-gray" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-32 font-serif">
+                                    <option value="" selected disabled>Vyberte...</option>
+                                    <option value="forward">Dopředu</option>
+                                    <option value="left">Doleva (+dopředu)</option>
+                                    <option value="right">Doprava (+dopředu)</option>
+                                    <option value="backward">Dozadu</option>
+                                </select>
+                                <select id="loop-gray" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-20 font-serif">
+                                    <option value="1">1x</option>
+                                    <option value="2">2x</option>
+                                    <option value="3">3x</option>
+                                    <option value="4">4x</option>
+                                    <option value="5" selected>5x</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Oranžová (Složený Cyklus s vnějším opakováním) -->
+                        <div id="sensor-row-orange" class="flex flex-col items-start justify-between gap-3 bg-slate-950/40 p-3 rounded border border-slate-800/40 col-span-1 md:col-span-2 font-serif font-serif font-serif">
+                            <div class="flex flex-wrap items-center gap-2 w-full border-b border-slate-800 pb-2 mb-1">
+                                <span class="w-4 h-4 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.6)] animate-pulse"></span>
+                                <span class="text-xs uppercase text-slate-300 font-bold font-serif font-serif">Oranžová (Složený Cyklus):</span>
+                                <span class="text-xs text-slate-400 font-bold font-serif ml-auto">Celé opakovat:</span>
+                                <select id="loop-orange-outer" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-16 font-serif">
+                                    <option value="1" selected>1x</option>
+                                    <option value="2">2x</option>
+                                    <option value="3">3x</option>
+                                    <option value="4">4x</option>
+                                    <option value="5">5x</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-wrap gap-2 items-center w-full">
+                                <span class="text-xs text-slate-500 font-serif font-bold">(</span>
+                                <select id="loop-orange-1" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-14 font-serif">
+                                    <option value="1">1x</option>
+                                    <option value="2" selected>2x</option>
+                                    <option value="3">3x</option>
+                                    <option value="4">4x</option>
+                                    <option value="5">5x</option>
+                                </select>
+                                <select id="action-orange-1" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-28 font-serif">
+                                    <option value="" selected disabled>Vyberte...</option>
+                                    <option value="forward">Dopředu</option>
+                                    <option value="left">Doleva (+dopředu)</option>
+                                    <option value="right">Doprava (+dopředu)</option>
+                                    <option value="backward">Dozadu</option>
+                                </select>
+                                <span class="text-xs text-slate-500 font-bold font-serif">a potom</span>
+                                <select id="loop-orange-2" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-14 font-serif">
+                                    <option value="1" selected>1x</option>
+                                    <option value="2">2x</option>
+                                    <option value="3">3x</option>
+                                    <option value="4">4x</option>
+                                    <option value="5">5x</option>
+                                </select>
+                                <select id="action-orange-2" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 w-28 font-serif">
+                                    <option value="" selected disabled>Vyberte...</option>
+                                    <option value="forward">Dopředu</option>
+                                    <option value="left">Doleva (+dopředu)</option>
+                                    <option value="right">Doprava (+dopředu)</option>
+                                    <option value="backward">Dozadu</option>
+                                </select>
+                                <span class="text-xs text-slate-500 font-serif font-bold">)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Taktická jeskynní mřížka s tlačítky -->
+                <div class="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl w-full flex flex-col items-center">
+                    
+                    <!-- HLAVIČKA MAPY: Sektor, Souřadnice a Digitální Baterie -->
+                    <div class="w-full flex flex-col sm:flex-row justify-between items-center mb-2 gap-2 border-b border-slate-800 pb-3">
+                        <div class="text-center sm:text-left">
+                            <span id="current-level-title" class="text-xs text-emerald-400 uppercase tracking-widest font-bold block font-serif">Sektor 1: Křemičitý koridor</span>
+                            <span class="text-[10px] text-slate-500 uppercase font-serif">Pozice: <strong id="telemetry-coord" class="text-cyan-400 font-serif">A1</strong></span>
+                        </div>
+                        
+                        <!-- Digitální Baterie / Paměť -->
+                        <div class="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded border border-slate-800">
+                            <span id="telemetry-loop-label" class="text-[10px] text-slate-400 font-mono font-bold uppercase font-serif">PAMĚŤ:</span>
+                            <div id="battery-bar-container" class="w-24 h-3 bg-slate-900 rounded overflow-hidden relative border border-slate-800">
+                                <div id="battery-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%;"></div>
+                            </div>
+                            <span id="telemetry-loop" class="text-[10px] text-white font-mono font-serif">0 / 10 úloh</span>
+                        </div>
+                    </div>
+
+                    <!-- INTEGROVANÝ TELEMETRICKÝ PANEL (přímo v záhlaví herní mapy) -->
+                    <div class="w-full grid grid-cols-2 gap-2 mb-4 bg-slate-950/60 p-2 rounded border border-slate-850 text-[10px] font-mono">
+                        <div class="text-left text-slate-450 uppercase font-serif">
+                            STATUS: <span id="telemetry-status" class="text-red-400 font-bold transition-all font-serif">NEAKTIVNÍ</span>
+                        </div>
+                        <div class="text-right text-slate-450 uppercase font-serif">
+                            SENZOR: <span id="telemetry-sensor" class="text-slate-400 transition-all font-serif">Bez signálu</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Herní plocha -->
+                    <div class="relative w-full aspect-square max-w-[480px] bg-slate-950 rounded-xl border-2 border-slate-800/80 overflow-hidden select-none">
+                        <!-- absolutní inset fixuje výšku mřížky, čímž kompletně odstraňuje černou obrazovku v iFramech -->
+                        <div id="simulation-grid" class="grid gap-1 absolute inset-3">
+                            <!-- Generováno JavaScriptem -->
+                        </div>
+                    </div>
+
+                    <!-- TLAČÍTKA OVLÁDÁNÍ ROVERU -->
+                    <div class="w-full mt-4 flex flex-wrap sm:flex-nowrap gap-3">
+                        <button id="btn-start" onclick="startSimulation()" class="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider shadow-[0_0_15px_rgba(16,185,129,0.3)] font-serif font-bold">
+                            Spustit Rover
+                        </button>
+                        <button id="btn-return" onclick="resetSimulation()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider font-serif">
+                            Vrátit na start
+                        </button>
+                        <button id="btn-reset" onclick="clearCurrentSector()" class="flex-1 bg-rose-950/40 border border-rose-800/60 hover:bg-rose-900/60 text-rose-200 font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider font-serif">
+                            Reset Sektoru
+                        </button>
+                    </div>
+
+                    <!-- Stavový řádek pod tlačítky mapy -->
+                    <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-[10px] text-slate-500 tracking-wider uppercase border-t border-slate-800/60 pt-4 w-full font-serif">
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-slate-800 border border-slate-700/80 font-serif"></span> Černá klenba (překážka)</div>
+                        <div class="flex items-center gap-2"><span class="text-emerald-400 font-bold font-serif">START</span> Vstup (Sektor A1)</div>
+                        <div class="flex items-center gap-2"><span class="text-rose-500 font-bold font-serif">✕ CÍL</span> Nouzový modul</div>
+                        <div class="flex items-center gap-2"><span class="text-cyan-400 font-serif">A1 - F6</span> Sektorové souřadnice</div>
+                    </div>
+                </div>
+
+                <!-- KROK 2: Opakování smyčky / Baterie -->
+                <div id="step-limit-container" class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl w-full space-y-4 hidden font-serif">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                        <h2 class="text-cyan-400 text-sm tracking-wider uppercase font-serif font-bold">Krok 2: Kapacita Paměti (Limit úloh)</h2>
+                    </div>
+                    <div class="flex items-center gap-4 bg-slate-950/40 p-3 rounded border border-slate-800/40 font-serif">
+                        <div class="flex-1 font-serif">
+                            <label class="block text-xs text-slate-400 uppercase font-serif">Maximální kapacita paměti:</label>
+                            <span class="text-[10px] text-slate-500 block font-serif">Nastavte, kolik maximálně navigačních krystalů (úloh) může robot udržet.</span>
+                        </div>
+                        <div class="flex items-center gap-2 font-serif">
+                            <input type="number" id="loop-count" value="10" min="1" max="50" onchange="syncStepLimit()" class="w-16 bg-slate-950 border border-slate-800 rounded py-1 px-2 text-center text-white font-bold font-serif">
+                            <span class="text-xs text-slate-400 font-serif">úloh</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- DOLE: POKYNY PRO ŘÍDICÍ STŘEDISKO (Metodika pro učitele) s Heslem -->
+        <div class="mt-8 bg-slate-950 border-2 border-slate-900 rounded-xl overflow-hidden shadow-2xl">
+            
+            <!-- Záhlaví s heslem / padlockem -->
+            <div id="method-header" class="bg-slate-900/60 p-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-900 font-serif">
+                <div class="text-center sm:text-left">
+                    <h3 class="font-sci text-sm text-cyan-400 uppercase">🔒 Pokyny pro rozcestník <span class="text-xs text-slate-500 lowercase">(Metodika pro učitele)</span></h3>
+                    <p class="text-[10px] text-slate-500 font-mono mt-0.5 uppercase tracking-widest font-serif">Sekce je chráněna bezpečnostním kódem</p>
+                </div>
+                
+                <!-- Vstupní kód -->
+                <div id="lock-form" class="flex gap-2 items-center">
+                    <input type="password" id="passcode-input" placeholder="Zadejte kód" class="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-center text-white font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500 w-36">
+                    <button onclick="unlockMethodology()" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs px-4 py-1.5 rounded uppercase transition-all font-serif">
+                        Ověřit
+                    </button>
+                </div>
+                <div id="unlock-success-badge" class="hidden bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1 rounded uppercase">
+                    ✓ Autorizováno
+                </div>
+            </div>
+
+            <!-- Obsah metodiky -->
+            <div id="methodology-content" class="p-6 text-xs text-slate-400 space-y-4 hidden border-t border-slate-900/80 bg-slate-950/40">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 font-serif">
+                    <div>
+                        <h4 class="text-cyan-400 text-xs uppercase mb-2 font-serif font-bold">1. Didaktický koncept aktivity</h4>
+                        <p class="leading-relaxed font-serif text-slate-300">
+                            Aktivita dává žákům roli programátorů a průzkumníků kosmické mise. Pomocí virtuálního simulátoru <strong>ROOT-X</strong> se učí programovat reakce robota na barevné podněty.
+                        </p>
+                        <p class="leading-relaxed mt-2 font-serif text-slate-300">
+                            <strong>Zásadní inovace -- limitovaná kapacita paměti:</strong> Žáci nemohou pokládat krystaly bezhlavě na každou zatáčku, protože by okamžitě překročili povolený limit paměti robota. To je učí efektivitě kódu a nutí je delší úseky komprimovat pomocí cyklů (fialová, šedá) nebo vnořených cyklů (oranžová).
+                        </p>
+                        <h4 class="text-cyan-400 text-xs uppercase mt-4 mb-2 font-serif font-bold">2. Výukové cíle (Bloomova taxonomie)</h4>
+                        <ul class="list-disc pl-4 space-y-1 font-serif text-slate-300">
+                            <li><strong>Zapamatovat si:</strong> Vysvětlit význam barevných senzorů a princip fungování cyklu.</li>
+                            <li><strong>Aplikovat:</strong> Navrhnout funkční reakce na barvy (Krok 1) a rozmístit krystaly na mapě.</li>
+                            <li><strong>Analyzovat:</strong> Identifikovat a opravit chyby v algoritmu (debugging) při havárii.</li>
+                            <li><strong>Tvořit:</strong> Vytvořit vlastní stabilní bludiště (Sandbox) a sdílet ho se spolužáky.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="text-cyan-400 text-xs uppercase mb-2 font-serif font-bold">3. Scénář vyučovací hodiny</h4>
+                        <ol class="list-decimal pl-4 space-y-1 font-serif text-slate-300">
+                            <li><strong>Úvodní fáze (10 min):</strong> Motivace s nouzovou depeší, představení vozítka ROOT-X, zadání jména vozidla.</li>
+                            <li><strong>Hlavní fáze (25 min):</strong> Průchod kampaní -- Sektor 1 (základy), Sektor 2 (fialové krystaly a jednoduché cykly, limit 10), Sektor 3 (krystalová komprese s přísným limitem 6 úloh), Sektor 4 (oranžový vnořený cyklus k překonání serpentine trasy).</li>
+                            <li><strong>Zobecnění a Sandbox (10 min):</strong> Tvorba vlastního bludiště, stažení mapy jako `.json` souboru, nahrání sousedova souboru a vzájemné řešení.</li>
+                        </ol>
+                        <h4 class="text-cyan-400 text-xs uppercase mt-4 mb-2 font-serif font-bold">4. Práce s chybou (Debugging)</h4>
+                        <p class="leading-relaxed font-serif text-slate-300">
+                            Učitel žákům neříká správné odpovědi, ale klade návodné badatelské otázky:
+                        </p>
+                        <ul class="list-disc pl-4 space-y-1 font-serif text-slate-300">
+                            <li><em>„Na které souřadnici přesně robot havaroval? Co tam potkal?“</em></li>
+                            <li><em>„Podívej se do své tabulky senzorů – odbočil robot přesně tam, kam jsi nadefinoval?“</em></li>
+                            <li><em>„Pokud se robot točí v kruhu, kde nastalo zacyklení a jak ho můžeme přerušit?“</em></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Tiskové a instalační podklady pro učitele (Fyzická aktivita) -->
+        <div class="mt-12 border-t border-slate-800/60 pt-6 flex flex-col md:flex-row justify-between items-center gap-4 font-serif">
+            <div class="text-center md:text-left font-serif">
+                <h3 class="text-sm text-slate-300 uppercase font-bold font-serif">Chcete raději stavět fyzickou trasu s vystřiženými krystaly?</h3>
+                <p class="text-xs text-slate-500 mt-1 font-serif">Stáhněte si tiskové podklady 1:1 obsahující prázdné dlaždice Sektorů k popsání souřadnic a barevné navigační krystaly k vystřižení!</p>
+            </div>
+            <button onclick="window.print()" class="bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 text-xs px-5 py-2.5 rounded transition-all flex items-center gap-2 uppercase font-serif font-bold">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                Vytisknout podklady pro výuku (1:1)
+            </button>
+        </div>
+
+    </div>
+
+    <!-- TISKOVÁ VERZE PRO REÁLNÝ TISK -->
+    <div class="print-container hidden bg-white text-black">
+        <div class="print-page flex flex-col justify-between items-center text-center">
+            <div class="space-y-4">
+                <h1 style="font-family: 'Orbitron', sans-serif; font-size: 24px; color: #000; margin-bottom: 5px; text-transform: uppercase;">Mise Xylos-7: Skládačka 1:1</h1>
+                <p style="font-size: 13px; max-width: 600px; margin: auto; line-height: 1.5;">
+                    Tato tisková sada obsahuje prázdné jeskynní dlaždice o rozměrech 15x15 cm a navigační krystaly k vystřižení. Žáci mohou dlaždice popsat a naprogramovat fyzickou trasu!
+                </p>
+            </div>
+
+            <div style="width: 5cm; height: 5cm; border: 2px solid #000; display: flex; justify-content: center; align-items: center; font-weight: bold; margin: 30px auto; font-family: 'Orbitron', sans-serif;">
+                5 x 5 cm
+            </div>
+
+            <div style="font-size: 12px; text-align: left; max-width: 620px; border: 2px solid #000; padding: 15px; margin-top: 10px; line-height: 1.6;">
+                <strong style="display: block; margin-bottom: 5px; font-family: 'Orbitron', sans-serif;">Pokyny k sestavení a bádání:</strong>
+                <strong>1. Správné měřítko:</strong> Při tisku nastavte v dialogu měřítko přesně na 100 % (vypnout přizpůsobení stránce). Přeměřte kontrolní čtverec pravítkem.<br>
+                <strong>2. Označení Sektorů:</strong> Žáci vyplní souřadnice Sektorů do levé horní kolonky každého listu podle herní mapy.<br>
+                <strong>3. Vkládání krystalů:</strong> Vystřihněte barevné krystaly z poslední tiskové strany a fyzicky je vkládejte doprostřed vytištěných dlaždic tak, aby robot projel celou trasu.
+            </div>
+
+            <div style="font-size: 11px; color: #555; margin-top: 20px;">
+                Mise Xylos-7 • Generováno robotickým modulem
+            </div>
+        </div>
+
+        <div id="print-tiles-container"></div>
+    </div>
+
+    <!-- AUDIO A SIMULAČNÍ LOGIKA -->
+    <script>
+        let ROWS = 6;
+        let COLS = 6;
+
+        let vehicleName = "R1";
+        let currentLevel = 1;
+        let gameMode = "campaign"; // campaign | sandbox | custom_play
+        let activeSandboxTool = "start"; // start | crew | wall
+
+        // Reprezentace herního stavu
+        let gridState = Array(ROWS).fill(null).map(() => Array(COLS).fill('empty'));
+        let startPos = { r: 5, c: 0 }; 
+        let crewPos = { r: 0, c: 5 };
+
+        // Globální mapa povolených barev pro cyklování a programování
+        let colorAllowance = {
+            red: true,
+            green: true,
+            blue: true,
+            yellow: true,
+            purple: true,
+            orange: true,
+            gray: true
+        };
+	// Funkce pro zavření úvodního okna Sektoru 2
+	function dismissSector2Intro() {
+    		const s2Modal = document.getElementById('sector2-intro-modal');
+    		if (s2Modal) {
+        		// Skryje modální okno
+        		s2Modal.classList.add('hidden');
+        
+        		// Volitelně můžeme přidat i tón pro lepší interakci, stejně jako to máš u jiných tlačítek
+        		playSound(523.25, 0.1);
+    		}
+	}
+
+        // Definice levelů s neprostupnými stěnami
+        const levels = {
+            1: {
+                title: "Sektor 1: Křemičitý koridor",
+                start: { r: 5, c: 0 },
+                crew: { r: 2, c: 4 },
+                maxLoops: 10, // Sektor 1 limit paměti: 10 úloh
+                walls: [
+                    { r: 4, c: 1 }, { r: 4, c: 2 }, { r: 4, c: 3 },
+                    { r: 3, c: 3 }, { r: 2, c: 3 }
+                ]
+            },
+            2: {
+                title: "Sektor 2: Obsidiánová stěna",
+                start: { r: 5, c: 0 },
+                crew: { r: 0, c: 4 },
+                maxLoops: 10, // Sektor 2 limit paměti: 10 úloh
+                walls: [
+                    { r: 4, c: 1 }, { r: 4, c: 2 }, { r: 4, c: 3 }, { r: 4, c: 4 },
+                    { r: 2, c: 1 }, { r: 2, c: 2 }, { r: 2, c: 4 }, { r: 2, c: 5 },
+                    { r: 1, c: 1 }, { r: 1, c: 2 }
+                ]
+            },
+            3: {
+                title: "Sektor 3: Krystalový dóm (Vyžaduje cykly!)",
+                start: { r: 5, c: 0 },
+                crew: { r: 0, c: 5 },
+                maxLoops: 6, // Vyžaduje přesné zkomprimování fialovými/oranžovými krystaly!
+                walls: [
+                    { r: 4, c: 1 }, { r: 3, c: 1 }, { r: 2, c: 1 },
+                    { r: 1, c: 1 }, { r: 4, c: 3 }, { r: 3, c: 3 },
+                    { r: 2, c: 3 }, { r: 1, c: 3 }, { r: 3, c: 5 },
+                    { r: 2, c: 5 }, { r: 1, c: 5 }
+                ]
+            },
+            4: {
+                title: "Sektor 4: Propast bez návratu (Finální zkouška)",
+                start: { r: 5, c: 0 },
+                crew: { r: 0, c: 1 },
+                maxLoops: 8,
+                // Plně prostupná serpentine trasa, která je férově řešitelná s 8 krystaly!
+                walls: [
+                    { r: 5, c: 1 }, { r: 5, c: 2 }, { r: 5, c: 3 },
+                    { r: 4, c: 1 }, { r: 4, c: 5 },
+                    { r: 3, c: 1 }, { r: 3, c: 3 },
+                    { r: 2, c: 3 }, { r: 2, c: 5 },
+                    { r: 1, c: 0 }, { r: 1, c: 1 }, { r: 1, c: 2 }, { r: 1, c: 3 },
+                    { r: 0, c: 0 }, { r: 0, c: 5 }
+                ]
+            }
+        };
+
+        // Simulační parametry
+        let isSimulating = false;
+        let simInterval = null;
+        let roverPos = { r: 5, c: 0 };
+        let roverDir = 'N'; // N, E, S, W
+        let currentLoopCount = 0;
+        let totalLoopsAllowed = 15;
+
+        // Bezpečná lazy-loading inicializace AudioContextu
+        let audioCtx = null;
+
+        function playSound(freq, duration, type) {
+            type = type || 'square';
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.warn("AudioContext suspended/blocked.");
+            }
+        }
+
+        // Pomocná metoda pro transformaci pozice na indexové souřadnice (např. r=5, c=0 -> A1)
+        function getCoords(r, c) {
+            const letter = String.fromCharCode(65 + c);
+            const num = ROWS - r;
+            return letter + num;
+        }
+
+        // Ověření tajného kódu učitelské metodiky (1969)
+        function unlockMethodology() {
+            const passcode = document.getElementById('passcode-input');
+            const pin = passcode ? passcode.value.trim() : "";
+            if (pin === "1969") {
+                playSound(600, 0.1);
+                setTimeout(() => playSound(800, 0.3), 120);
+                
+                const lockForm = document.getElementById('lock-form');
+                if (lockForm) lockForm.classList.add('hidden');
+                
+                const successBadge = document.getElementById('unlock-success-badge');
+                if (successBadge) successBadge.classList.remove('hidden');
+                
+                const methodContent = document.getElementById('methodology-content');
+                if (methodContent) methodContent.classList.remove('hidden');
+            } else {
+                playSound(150, 0.4, 'sawtooth');
+                const input = document.getElementById('passcode-input');
+                if (input) {
+                    input.value = "";
+                    input.placeholder = "Chyba!";
+                    input.style.borderColor = "#ef4444";
+                    setTimeout(() => {
+                        input.placeholder = "Zadejte kód";
+                        input.style.borderColor = "#374151";
+                    }, 1500);
+                }
+            }
+        }
+
+        // Kontrola, zda existuje vlastní uložený level a zobrazení/skrytí tlačítka
+        function checkCustomLevelExistence() {
+            const customData = localStorage.getItem('custom_cave_level');
+            const btn = document.getElementById('btn-play-custom');
+            if (btn) {
+                if (customData) {
+                    btn.classList.remove('hidden');
+                } else {
+                    btn.classList.add('hidden');
+                }
+            }
+        }
+
+        // Krok A: Potvrzení jména a otevření rozcestníku režimů
+        function confirmVehicleName() {
+            const input = document.getElementById('vehicle-name-input');
+            const name = input ? input.value.trim().toUpperCase() : "R1";
+            if (name.length === 0) {
+                const err = document.getElementById('name-error');
+                if (err) err.classList.remove('hidden');
+                return;
+            }
+            vehicleName = name;
+            
+            const dispName = document.getElementById('vehicle-display-name');
+            if (dispName) dispName.innerText = name;
+            
+            const vicName = document.getElementById('victory-rover-name');
+            if (vicName) vicName.innerText = name;
+            
+            const crashName = document.getElementById('crash-rover-name');
+            if (crashName) crashName.innerText = name;
+            
+            const storyName = document.getElementById('story-rover-name');
+            if (storyName) storyName.innerText = name;
+
+            const modeSelectName = document.getElementById('mode-select-rover-name');
+            if (modeSelectName) modeSelectName.innerText = name;
+            
+            // Přechod do rozcestníku
+            const introModal = document.getElementById('intro-modal');
+            if (introModal) introModal.style.display = 'none';
+            
+            const modeSelectModal = document.getElementById('mode-select-modal');
+            if (modeSelectModal) modeSelectModal.classList.remove('hidden');
+            
+            checkCustomLevelExistence();
+
+            playSound(587.33, 0.1);
+            setTimeout(() => playSound(698.46, 0.1), 120);
+        }
+
+        // Návrat z hlavního simulátoru zpět na výběr režimů
+        function backToModeSelect() {
+            if (isSimulating) stopSimulation(false);
+            
+            const mainInterface = document.getElementById('main-interface');
+            if (mainInterface) mainInterface.classList.add('hidden');
+
+            const modeSelectModal = document.getElementById('mode-select-modal');
+            if (modeSelectModal) modeSelectModal.classList.remove('hidden');
+
+            // Zkontrolujeme a případně aktualizujeme dostupnost vlastního uloženého sektoru
+            checkCustomLevelExistence();
+
+            playSound(400, 0.1);
+        }
+
+        // KROK: Volba Kampaně -> Briefing
+        function selectCampaignMode() {
+            gameMode = "campaign";
+            
+            const modeSelectModal = document.getElementById('mode-select-modal');
+            if (modeSelectModal) modeSelectModal.classList.add('hidden');
+
+            const storyModal = document.getElementById('story-modal');
+            if (storyModal) storyModal.classList.remove('hidden');
+
+            playSound(523.25, 0.1);
+        }
+
+        // KROK: Vstup do simulace z briefingu
+        function enterCaveSimulator() {
+            const storyModal = document.getElementById('story-modal');
+            if (storyModal) storyModal.classList.add('hidden');
+
+            const mainInterface = document.getElementById('main-interface');
+            if (mainInterface) mainInterface.classList.remove('hidden');
+
+            updateUIForMode('campaign');
+
+            playSound(523.25, 0.15);
+            setTimeout(() => playSound(659.25, 0.15), 150);
+            setTimeout(() => playSound(783.99, 0.3), 300);
+            
+            selectLevel(1);
+        }
+
+        // KROK: Otevření popupu pro Sandbox velikost
+        function openSandboxSetup() {
+            const modeSelectModal = document.getElementById('mode-select-modal');
+            if (modeSelectModal) modeSelectModal.classList.add('hidden');
+
+            const sandboxSetup = document.getElementById('sandbox-setup-modal');
+            if (sandboxSetup) sandboxSetup.classList.remove('hidden');
+
+            playSound(600, 0.1);
+        }
+
+        function closeSandboxSetup() {
+            const sandboxSetup = document.getElementById('sandbox-setup-modal');
+            if (sandboxSetup) sandboxSetup.classList.add('hidden');
+
+            const modeSelectModal = document.getElementById('mode-select-modal');
+            if (modeSelectModal) modeSelectModal.classList.remove('hidden');
+        }
+
+        // KROK: Spuštění Sandboxu s dynamickou velikostí
+        function startSandbox(size) {
+            gameMode = "sandbox";
+            ROWS = size;
+            COLS = size;
+
+            const sandboxSetup = document.getElementById('sandbox-setup-modal');
+            if (sandboxSetup) sandboxSetup.classList.add('hidden');
+
+            const mainInterface = document.getElementById('main-interface');
+            if (mainInterface) mainInterface.classList.remove('hidden');
+
+            // Vyčistit mřížku pro Sandbox a nastavit UI
+            updateUIForMode('sandbox');
+
+            startPos = { r: size - 1, c: 0 }; // Start vlevo dole
+            crewPos = { r: 0, c: size - 1 };  // Cíl vpravo nahoře
+            totalLoopsAllowed = 15;
+
+            const loopInput = document.getElementById('loop-count');
+            if (loopInput) {
+                loopInput.value = 15;
+            }
+
+            gridState = Array(ROWS).fill(null).map(() => Array(COLS).fill('empty'));
+            gridState[startPos.r][startPos.c] = 'start';
+            gridState[crewPos.r][crewPos.c] = 'crew';
+
+            roverPos = { ...startPos };
+            roverDir = 'N';
+
+            const levelTitle = document.getElementById('current-level-title');
+            if (levelTitle) levelTitle.innerText = "Sandbox: Editor Sektoru";
+
+            // Povolit standardně všechny barvy v Sandboxu
+            for (let color in colorAllowance) {
+                colorAllowance[color] = true;
+                const checkbox = document.getElementById("allow-" + color);
+                if (checkbox) checkbox.checked = true;
+            }
+
+            setSandboxTool('start');
+            initGrid();
+            updateBatteryDisplay();
+            updateColorAvailability();
+            updateInitialDirectionFilters();
+
+            playSound(523.25, 0.15);
+            setTimeout(() => playSound(659.25, 0.15), 150);
+            setTimeout(() => playSound(783.99, 0.3), 300);
+        }
+
+        // Sandbox: Vyčistí kompletně celou mapu (všechny skály) do výchozího stavu
+        function clearSandboxMap() {
+            gridState = Array(ROWS).fill(null).map(() => Array(COLS).fill('empty'));
+            startPos = { r: ROWS - 1, c: 0 };
+            crewPos = { r: 0, c: COLS - 1 };
+            
+            gridState[startPos.r][startPos.c] = 'start';
+            gridState[crewPos.r][crewPos.c] = 'crew';
+            
+            roverPos = { ...startPos };
+            roverDir = 'N';
+            
+            initGrid();
+            updateBatteryDisplay();
+            updateInitialDirectionFilters();
+            playSound(400, 0.1, 'sawtooth');
+        }
+
+        // Sestaví seznam skal (wall) na mapě
+        function getWallList() {
+            let list = [];
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (gridState[r][c] === 'wall') {
+                        list.push({ r: r, c: c });
+                    }
+                }
+            }
+            return list;
+        }
+
+        // Uložení vlastního navrženého levelu do localStorage
+        function saveSandboxLevel() {
+            if (!hasValidPath()) {
+                playSound(150, 0.4, 'sawtooth');
+                const status = document.getElementById('telemetry-status');
+                if (status) {
+                    status.innerText = 'CHYBA: NEEXISTUJE CESTA ZE STARTU DO CÍLE!';
+                    status.className = 'text-rose-500 font-bold transition-all';
+                }
+                return;
+            }
+
+            const loopInput = document.getElementById('loop-count');
+            const maxLoopsVal = loopInput ? parseInt(loopInput.value) : 10;
+
+            const levelData = {
+                rows: ROWS,
+                cols: COLS,
+                start: startPos,
+                crew: crewPos,
+                walls: getWallList(),
+                allowedColors: { ...colorAllowance },
+                maxLoops: maxLoopsVal,
+                startDir: roverDir
+            };
+
+            localStorage.setItem('custom_cave_level', JSON.stringify(levelData));
+            playSound(523.25, 0.1);
+            setTimeout(() => playSound(1046.50, 0.3), 150);
+
+            const status = document.getElementById('telemetry-status');
+            if (status) {
+                status.innerText = 'SEKTOR ÚSPĚŠNĚ ULOŽEN!';
+                status.className = 'text-emerald-400 font-bold transition-all';
+            }
+
+            showSaveSuccessModal();
+        }
+
+        // FUNKCE PRO EXPORT / STAŽENÍ SOUBORU Z MODALU S ÚSPĚCHEM
+        function downloadCustomLevelFile() {
+            const customDataStr = localStorage.getItem('custom_cave_level');
+            if (!customDataStr) return;
+            triggerDownload(customDataStr, "sektor_rootx.json");
+        }
+
+        // FUNKCE PRO PŘÍMÉ STAŽENÍ SOUBORU ZE SANDBOX PANELU
+        function downloadCustomLevelFileDirect() {
+            if (!hasValidPath()) {
+                playSound(150, 0.4, 'sawtooth');
+                alert("Nelze stáhnout: Neexistuje cesta ze startu do cíle!");
+                return;
+            }
+
+            const loopInput = document.getElementById('loop-count');
+            const maxLoopsVal = loopInput ? parseInt(loopInput.value) : 10;
+
+            const levelData = {
+                rows: ROWS,
+                cols: COLS,
+                start: startPos,
+                crew: crewPos,
+                walls: getWallList(),
+                allowedColors: { ...colorAllowance },
+                maxLoops: maxLoopsVal,
+                startDir: roverDir
+            };
+
+            triggerDownload(JSON.stringify(levelData, null, 2), "sektor_rootx.json");
+        }
+
+        // Společné stažení
+        function triggerDownload(content, fileName) {
+            const blob = new Blob([content], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            playSound(523.25, 0.1);
+        }
+
+        // Otevře systémové okno pro výběr souboru k nahrání
+        function triggerFileImport() {
+            const selector = document.getElementById('import-file-selector');
+            if (selector) {
+                selector.click();
+            }
+        }
+
+        // Zpracování nahraného souboru
+        function handleFileImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    // Validace minimální potřebné struktury pro Sektor
+                    if (data.rows && data.cols && data.start && data.crew && Array.isArray(data.walls)) {
+                        localStorage.setItem('custom_cave_level', JSON.stringify(data));
+                        playSound(523.25, 0.15);
+                        setTimeout(() => playSound(783.99, 0.3), 150);
+                        
+                        // Okamžitě spustíme herní režim pro tento importovaný level
+                        playCustomLevel();
+                    } else {
+                        throw new Error("Chybná struktura jeskynního plánu.");
+                    }
+                } catch (err) {
+                    playSound(150, 0.4, 'sawtooth');
+                    alert("Chyba: Soubor nemá platný formát taktického Sektoru ROOT-X!");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = ''; // Reset inputu
+        }
+
+        function showSaveSuccessModal() {
+            const modal = document.getElementById('save-success-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function dismissSaveSuccess(playNow) {
+            const modal = document.getElementById('save-success-modal');
+            if (modal) modal.classList.add('hidden');
+
+            if (playNow) {
+                playCustomLevel();
+            }
+        }
+
+        // Spuštění vlastního navrženého a uloženého levelu k hraní
+        function playCustomLevel() {
+            const customDataStr = localStorage.getItem('custom_cave_level');
+            if (!customDataStr) return;
+
+            const lvl = JSON.parse(customDataStr);
+            gameMode = "custom_play";
+            
+            const modeSelectModal = document.getElementById('mode-select-modal');
+            if (modeSelectModal) modeSelectModal.classList.add('hidden');
+
+            const mainInterface = document.getElementById('main-interface');
+            if (mainInterface) mainInterface.classList.remove('hidden');
+
+            updateUIForMode('custom_play');
+
+            ROWS = lvl.rows;
+            COLS = lvl.cols;
+            startPos = { ...lvl.start };
+            crewPos = { ...lvl.crew };
+            roverPos = { ...startPos };
+            roverDir = lvl.startDir || 'N';
+
+            totalLoopsAllowed = lvl.maxLoops || 15;
+            const loopInput = document.getElementById('loop-count');
+            if (loopInput) {
+                loopInput.value = totalLoopsAllowed;
+            }
+            currentLoopCount = 0;
+
+            // Obnovení dostupných barev z uloženého plánu
+            if (lvl.allowedColors) {
+                colorAllowance = { ...lvl.allowedColors };
+            } else {
+                colorAllowance = { red: true, green: true, blue: true, yellow: true, purple: true, orange: true, gray: true };
+            }
+
+            for (let color in colorAllowance) {
+                const checkbox = document.getElementById("allow-" + color);
+                if (checkbox) checkbox.checked = colorAllowance[color];
+            }
+
+            updateColorAvailability();
+
+            // Sestavení mřížky
+            gridState = Array(ROWS).fill(null).map(() => Array(COLS).fill('empty'));
+            gridState[startPos.r][startPos.c] = 'start';
+            gridState[crewPos.r][crewPos.c] = 'crew';
+
+            if (lvl.walls) {
+                lvl.walls.forEach(w => {
+                    if (w.r < ROWS && w.c < COLS) {
+                        gridState[w.r][w.c] = 'wall';
+                    }
+                });
+            }
+
+            const levelTitle = document.getElementById('current-level-title');
+            if (levelTitle) levelTitle.innerText = "Hra: Vlastní Sektor (" + ROWS + "x" + COLS + ")";
+
+            initGrid();
+            updateBatteryDisplay();
+
+            // Reset telemetrie
+            const statusVal = document.getElementById('telemetry-status');
+            if (statusVal) {
+                statusVal.innerText = 'NEAKTIVNÍ';
+                statusVal.className = 'text-red-400 font-bold transition-all';
+            }
+            const sensorVal = document.getElementById('telemetry-sensor');
+            if (sensorVal) {
+                sensorVal.innerText = 'Bez signálu';
+                sensorVal.className = 'text-slate-400 transition-all';
+            }
+
+            playSound(523.25, 0.15);
+            setTimeout(() => playSound(659.25, 0.15), 150);
+            setTimeout(() => playSound(783.99, 0.3), 300);
+        }
+
+        // Sandbox: Výběr kreslicího nástroje
+        function setSandboxTool(tool) {
+            activeSandboxTool = tool;
+            const startBtn = document.getElementById('tool-start');
+            const crewBtn = document.getElementById('tool-crew');
+            const wallBtn = document.getElementById('tool-wall');
+            const desc = document.getElementById('tool-desc');
+
+            if (startBtn) startBtn.className = "p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif";
+            if (crewBtn) crewBtn.className = "p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif";
+            if (wallBtn) wallBtn.className = "p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif";
+
+            const activeBtn = document.getElementById("tool-" + tool);
+            if (activeBtn) activeBtn.className = "p-2 rounded bg-amber-950 border-2 border-amber-500 text-xs uppercase text-amber-400 font-bold transition-all";
+
+            if (desc) {
+                if (tool === 'start') desc.innerText = "Aktivní prvek: Kliknutím do mapy přesunete startovní pozici vozidla. (Pouze jednou)";
+                else if (tool === 'crew') desc.innerText = "Aktivní prvek: Kliknutím do mapy přesunete ztracenou posádku. (Pouze jednou)";
+                else desc.innerText = "Aktivní prvek: Klikáním na mřížku kreslíte/mažete neprostupné černé jeskynní zdi.";
+            }
+        }
+
+        // Dynamická ochrana startingsměru: nesmí hledět ven z mřížky
+        function updateInitialDirectionFilters() {
+            const r = startPos.r;
+            const c = startPos.c;
+
+            // Kontroly hranic
+            const canNorth = (r > 0);
+            const canSouth = (r < ROWS - 1);
+            const canEast = (c < COLS - 1);
+            const canWest = (c > 0);
+
+            // Nastavení stavů tlačítek
+            updateDirButton('N', canNorth);
+            updateDirButton('S', canSouth);
+            updateDirButton('E', canEast);
+            updateDirButton('W', canWest);
+
+            // Pokud aktuální směr ukazuje z mřížky, vynutíme první validní směr
+            if (roverDir === 'N' && !canNorth) forceValidDir();
+            else if (roverDir === 'S' && !canSouth) forceValidDir();
+            else if (roverDir === 'E' && !canEast) forceValidDir();
+            else if (roverDir === 'W' && !canWest) forceValidDir();
+        }
+
+        function updateDirButton(dir, enabled) {
+            const btn = document.getElementById("start-dir-" + dir);
+            if (btn) {
+                if (enabled) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-25', 'cursor-not-allowed', 'border-slate-800');
+                    if (roverDir === dir) {
+                        btn.className = "px-3 py-1.5 rounded bg-cyan-950 border-2 border-cyan-500 text-xs font-mono text-cyan-400 font-bold";
+                    } else {
+                        btn.className = "px-3 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300";
+                    }
+                } else {
+                    btn.disabled = true;
+                    btn.className = "px-3 py-1.5 rounded bg-slate-950 border border-slate-900 text-xs font-mono text-slate-700 opacity-25 cursor-not-allowed";
+                }
+            }
+        }
+
+        function forceValidDir() {
+            const r = startPos.r;
+            const c = startPos.c;
+            if (r > 0) roverDir = 'N';
+            else if (c < COLS - 1) roverDir = 'E';
+            else if (r < ROWS - 1) roverDir = 'S';
+            else if (c > 0) roverDir = 'W';
+            updateRoverRotation();
+            updateInitialDirectionFilters();
+        }
+
+        function setInitialDir(dir) {
+            roverDir = dir;
+            playSound(500, 0.05);
+            updateRoverRotation();
+            updateInitialDirectionFilters();
+        }
+
+        function updateColorAvailability() {
+            const colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'gray'];
+            colors.forEach(color => {
+                const row = document.getElementById("sensor-row-" + color);
+                if (row) {
+                    if (colorAllowance[color]) {
+                        row.classList.remove('opacity-30', 'pointer-events-none');
+                    } else {
+                        row.classList.add('opacity-30', 'pointer-events-none');
+                        // Vyčistit zablokovaný dropdown
+                        if (color === 'orange') {
+                            const sel1 = document.getElementById('action-orange-1');
+                            const sel2 = document.getElementById('action-orange-2');
+                            if (sel1) sel1.value = "";
+                            if (sel2) sel2.value = "";
+                        } else {
+                            const sel = document.getElementById("action-" + color);
+                            if (sel) sel.value = "";
+                        }
+                    }
+                }
+            });
+        }
+
+        function toggleColorAllowance(color) {
+            const checkbox = document.getElementById("allow-" + color);
+            if (checkbox) {
+                colorAllowance[color] = checkbox.checked;
+                updateColorAvailability();
+
+                // Smazat z mapy nepovolené barvy
+                if (!checkbox.checked) {
+                    for (let r = 0; r < ROWS; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            const val = gridState[r][c];
+                            if (val === color || val === ("start_" + color)) {
+                                gridState[r][c] = (r === startPos.r && c === startPos.c) ? 'start' : 'empty';
+                            }
+                        }
+                    }
+                    updateGridVisuals();
+                    updateBatteryDisplay();
+                }
+            }
+        }
+
+        // Bezpečnostní přepínač zobrazení pro jednotlivé režimy
+        function updateUIForMode(mode) {
+            const campaignInst = document.getElementById('campaign-instructions-card');
+            const sandboxEditor = document.getElementById('sandbox-editor-card');
+            const stepLimitContainer = document.getElementById('step-limit-container');
+            const levelSelector = document.getElementById('level-selector-container');
+            const sandboxBackBtn = document.getElementById('sandbox-back-btn');
+            const btnStart = document.getElementById('btn-start');
+            const btnReturn = document.getElementById('btn-return');
+            const btnReset = document.getElementById('btn-reset');
+            const loopLabel = document.getElementById('telemetry-loop-label');
+
+            // Tlačítko zpět na režimy ukazujeme VŽDY v záhlaví!
+            if (sandboxBackBtn) {
+                sandboxBackBtn.classList.remove('hidden');
+            }
+
+            if (mode === 'campaign' || mode === 'custom_play') {
+                if (campaignInst) campaignInst.classList.remove('hidden');
+                if (sandboxEditor) sandboxEditor.classList.add('hidden');
+                if (stepLimitContainer) stepLimitContainer.classList.add('hidden');
+                if (loopLabel) loopLabel.innerText = "PAMĚŤ:";
+                
+                if (mode === 'campaign') {
+                    if (levelSelector) levelSelector.classList.remove('hidden');
+                } else {
+                    if (levelSelector) levelSelector.classList.add('hidden');
+                }
+
+                if (btnStart) {
+                    btnStart.innerText = "Spustit Rover";
+                    btnStart.setAttribute('onclick', 'startSimulation()');
+                    btnStart.className = "flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider shadow-[0_0_15px_rgba(16,185,129,0.3)] font-serif";
+                }
+                if (btnReturn) {
+                    btnReturn.classList.remove('hidden'); // Druhé tlačítko "Vrátit na start" ukázat!
+                }
+                if (btnReset) {
+                    btnReset.innerText = "Reset Sektoru";
+                    btnReset.setAttribute('onclick', 'clearCurrentSector()');
+                    btnReset.className = "flex-1 bg-rose-950/40 border border-rose-800/60 hover:bg-rose-900/60 text-rose-200 font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider font-serif";
+                }
+            } else if (mode === 'sandbox') {
+                if (campaignInst) campaignInst.classList.add('hidden');
+                if (sandboxEditor) sandboxEditor.classList.remove('hidden');
+                if (stepLimitContainer) stepLimitContainer.classList.remove('hidden');
+                if (levelSelector) levelSelector.classList.add('hidden');
+                if (loopLabel) loopLabel.innerText = "LIMIT PAMĚTI:";
+
+                if (btnStart) {
+                    btnStart.innerText = "Uložit Level";
+                    btnStart.setAttribute('onclick', 'saveSandboxLevel()');
+                    btnStart.className = "flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.3)] font-serif";
+                }
+                if (btnReturn) {
+                    btnReturn.classList.add('hidden'); // V Sandbox editoru skrýt "Vrátit na start"
+                }
+                if (btnReset) {
+                    btnReset.innerText = "Vyčistit Mapu";
+                    btnReset.setAttribute('onclick', 'clearSandboxMap()');
+                    btnReset.className = "flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-all uppercase text-xs tracking-wider font-serif";
+                }
+            }
+
+            // Krok 1 (Senzory) skrýváme VÝHRADNĚ pro editor Sandbox
+            const actionProgramming = document.getElementById('action-programming-card');
+            if (actionProgramming) {
+                if (mode === 'sandbox') {
+                    actionProgramming.classList.add('hidden');
+                } else {
+                    actionProgramming.classList.remove('hidden');
+                }
+            }
+        }
+
+        // ZÁKLADNÍ VOLBA SEKTORŮ KAMPANĚ
+        function selectLevel(num) {
+            try {
+                if (isSimulating) stopSimulation(false);
+                currentLevel = num;
+                
+                for (let i = 1; i <= 4; i++) {
+                    const btn = document.getElementById("lvl-" + i + "-btn");
+                    if (btn) {
+                        if (i === num) {
+                            btn.className = "w-8 h-8 rounded text-xs font-bold transition-all bg-cyan-500 text-slate-950";
+                        } else {
+                            btn.className = "w-8 h-8 rounded text-xs font-bold transition-all bg-slate-850 hover:bg-slate-800 text-slate-300";
+                        }
+                    }
+                }
+
+                if (num === 2 && gameMode === 'campaign') {
+                    const s2Modal = document.getElementById('sector2-intro-modal');
+                    if (s2Modal) {
+                        s2Modal.classList.remove('hidden');
+                    }
+                }
+
+                const lvl = levels[num];
+                const lvlTitle = document.getElementById('current-level-title');
+                if (lvlTitle) lvlTitle.innerText = lvl.title;
+                
+                ROWS = 6;
+                COLS = 6;
+                startPos = { ...lvl.start };
+                crewPos = { ...lvl.crew };
+
+                const loopInput = document.getElementById('loop-count');
+                if (loopInput) {
+                    loopInput.value = lvl.maxLoops;
+                }
+                
+                currentLoopCount = 0;
+                totalLoopsAllowed = lvl.maxLoops; 
+
+                if (num === 1) {
+                    colorAllowance = { red: true, green: true, blue: true, yellow: true, purple: false, orange: false, gray: false };
+                } else if (num === 2) {
+                    colorAllowance = { red: true, green: true, blue: true, yellow: true, purple: true, orange: false, gray: false };
+                } else {
+                    colorAllowance = { red: true, green: true, blue: true, yellow: true, purple: true, orange: true, gray: true };
+                }
+                
+                updateColorAvailability();
+
+                gridState = Array(ROWS).fill(null).map(() => Array(COLS).fill('empty'));
+                
+                gridState[startPos.r][startPos.c] = 'start';
+                gridState[crewPos.r][crewPos.c] = 'crew';
+
+                lvl.walls.forEach(w => {
+                    gridState[w.r][w.c] = 'wall';
+                });
+
+                roverPos = { ...startPos };
+                roverDir = 'N';
+
+                initGrid();
+                updateBatteryDisplay();
+
+                const statusVal = document.getElementById('telemetry-status');
+                if (statusVal) {
+                    statusVal.innerText = 'NEAKTIVNÍ';
+                    statusVal.className = 'text-red-400 font-bold transition-all';
+                }
+                const sensorVal = document.getElementById('telemetry-sensor');
+                if (sensorVal) {
+                    sensorVal.innerText = 'Bez signálu';
+                    sensorVal.className = 'text-slate-400 transition-all';
+                }
+
+                buildPrintTiles();
+            } catch (e) {
+                console.error("selectLevel Error:", e);
+            }
+        }
+
+        // Sestavení tiskových dlaždic s kolonkami a stránkou barevných vystřihovacích krystalů
+        function buildPrintTiles() {
+            const printContainer = document.getElementById('print-tiles-container');
+            if (!printContainer) return;
+            printContainer.innerHTML = '';
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const page = document.createElement('div');
+                    page.className = "print-page";
+
+                    const header = document.createElement('div');
+                    header.style.marginBottom = "15px";
+                    header.style.textAlign = "center";
+                    header.innerHTML = '<strong style="font-size: 16px; font-family: \'Orbitron\', sans-serif; display: block;">JESKYNNÍ BLOK (Mise Zachraň posádku!)</strong><span style="font-size: 11px; color: #555;">Určete souřadnice Sektoru, zapište je do kolonky a vystřihněte podél čárkované čáry.</span>';
+                    page.appendChild(header);
+
+                    const tile = document.createElement('div');
+                    tile.className = "tile-1-1";
+
+                    const state = gridState[r][c];
+
+                    if (state === 'start' || (r === startPos.r && c === startPos.c)) {
+                        tile.innerHTML = `
+                            <div style="font-family: 'Orbitron', sans-serif; font-size: 16px; font-weight: bold; border: 2px solid #000; padding: 8px; background: #eee;">START</div>
+                            <div style="position: absolute; top: 10px; font-size: 16px; font-weight: bold;">↑ SEVER</div>
+                        `;
+                    } else if (state === 'crew') {
+                        tile.innerHTML = `
+                            <div style="font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: bold; border: 3px solid #f43f5e; color: #f43f5e; padding: 12px; text-align: center; border-radius: 6px;">✕ CÍL</div>
+                        `;
+                    } else if (state === 'wall') {
+                        tile.innerHTML = `
+                            <div style="width: 100%; height: 100%; background: #333; display: flex; justify-content: center; align-items: center;">
+                                <span style="color: white; font-weight: bold; font-family: 'Orbitron', sans-serif;">STĚNA JESKYNĚ</span>
+                            </div>
+                        `;
+                    } else {
+                        tile.innerHTML = `
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 1px dotted #ccc; width: 4cm; height: 4cm; border-radius: 50%; display: flex; justify-content: center; align-items: center;">
+                                <span style="font-size: 10px; color: #aaa; text-align: center; font-family: 'Rajdhani', sans-serif;">KRYSTAL<br>(Vložte vystřižený krystal)</span>
+                            </div>
+                        `;
+                    }
+
+                    // KOLONKA VLEVO NAHOŘE PRO RUČNÍ ZÁPIS SOUŘADNIC
+                    const inputLabel = document.createElement('div');
+                    inputLabel.style.position = "absolute";
+                    inputLabel.style.top = "12px";
+                    inputLabel.style.left = "12px";
+                    inputLabel.style.border = "1.5px solid #111";
+                    inputLabel.style.padding = "4px 8px";
+                    inputLabel.style.backgroundColor = "#fff";
+                    inputLabel.style.fontSize = "11px";
+                    inputLabel.style.fontWeight = "bold";
+                    inputLabel.style.color = "#000";
+                    inputLabel.style.fontFamily = "'Times New Roman', serif";
+                    inputLabel.innerText = "Sektor: ______________";
+                    tile.appendChild(inputLabel);
+
+                    page.appendChild(tile);
+
+                    const footer = document.createElement('div');
+                    footer.style.marginTop = "15px";
+                    footer.style.fontSize = "11px";
+                    footer.style.color = "#555";
+                    footer.innerText = 'Sousedé: Vlevo (' + (c > 0 ? getCoords(r, c-1) : 'stěna') + '), Vpravo (' + (c < COLS-1 ? getCoords(r, c+1) : 'stěna') + '), Nahoře (' + (r > 0 ? getCoords(r-1, c) : 'stěna') + '), Dole (' + (r < ROWS-1 ? getCoords(r+1, c) : 'stěna') + ')';
+                    page.appendChild(footer);
+
+                    printContainer.appendChild(page);
+                }
+            }
+
+            // STRÁNKA S BAREVNÝMI KRYSTALY K VYSTŘIŽENÍ (A4 Grid)
+            const crystalsPage = document.createElement('div');
+            crystalsPage.className = "print-page";
+            crystalsPage.style.display = "flex";
+            crystalsPage.style.flexDirection = "column";
+            crystalsPage.style.justifyContent = "flex-start";
+            crystalsPage.style.alignItems = "center";
+            crystalsPage.style.padding = "15mm";
+            crystalsPage.style.boxSizing = "border-box";
+            crystalsPage.style.background = "white";
+            crystalsPage.style.color = "black";
+
+            const crystalsHeader = document.createElement('div');
+            crystalsHeader.style.marginBottom = "20px";
+            crystalsHeader.style.textAlign = "center";
+            crystalsHeader.innerHTML = `
+                <h2 style="font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: bold; text-transform: uppercase; margin-bottom: 5px;">Záchranná mise Xylos-7: Navigační Krystaly</h2>
+                <span style="font-size: 11px; color: #555; font-family: 'Times New Roman', serif; display: block; max-width: 600px; margin: auto;">
+                    Vystřihněte tyto barevné krystaly podél vnějších přerušovaných čar. Žáci je mohou fyzicky přikládat do prázdných kruhových slotů na vytištěných sektorech pro vizuální programování trasy!
+                </span>
+            `;
+            crystalsPage.appendChild(crystalsHeader);
+
+            const crystalsGrid = document.createElement('div');
+            crystalsGrid.style.display = "grid";
+            crystalsGrid.style.gridTemplateColumns = "repeat(6, 1fr)";
+            crystalsGrid.style.gap = "10px";
+            crystalsGrid.style.width = "100%";
+            crystalsGrid.style.marginTop = "10px";
+
+            const crystalTokens = [
+                { name: "ČERVENÁ", color: "#ef4444", text: "VPRAVO" },
+                { name: "ČERVENÁ", color: "#ef4444", text: "VPRAVO" },
+                { name: "ČERVENÁ", color: "#ef4444", text: "VPRAVO" },
+                { name: "ČERVENÁ", color: "#ef4444", text: "VPRAVO" },
+                { name: "ČERVENÁ", color: "#ef4444", text: "VPRAVO" },
+                { name: "ČERVENÁ", color: "#ef4444", text: "VPRAVO" },
+
+                { name: "ZELENÁ", color: "#10b981", text: "VZAD" },
+                { name: "ZELENÁ", color: "#10b981", text: "VZAD" },
+                { name: "ZELENÁ", color: "#10b981", text: "VZAD" },
+                { name: "ZELENÁ", color: "#10b981", text: "VZAD" },
+                { name: "ZELENÁ", color: "#10b981", text: "VZAD" },
+                { name: "ZELENÁ", color: "#10b981", text: "VZAD" },
+
+                { name: "MODRÁ", color: "#3b82f6", text: "VLEVO" },
+                { name: "MODRÁ", color: "#3b82f6", text: "VLEVO" },
+                { name: "MODRÁ", color: "#3b82f6", text: "VLEVO" },
+                { name: "MODRÁ", color: "#3b82f6", text: "VLEVO" },
+                { name: "MODRÁ", color: "#3b82f6", text: "VLEVO" },
+                { name: "MODRÁ", color: "#3b82f6", text: "VLEVO" },
+
+                { name: "ŽLUTÁ", color: "#f59e0b", text: "VPŘED" },
+                { name: "ŽLUTÁ", color: "#f59e0b", text: "VPŘED" },
+                { name: "ŽLUTÁ", color: "#f59e0b", text: "VPŘED" },
+                { name: "ŽLUTÁ", color: "#f59e0b", text: "VPŘED" },
+                { name: "ŽLUTÁ", color: "#f59e0b", text: "VPŘED" },
+                { name: "ŽLUTÁ", color: "#f59e0b", text: "VPŘED" },
+
+                { name: "FIALOVÁ", color: "#a855f7", text: "CYKLUS" },
+                { name: "FIALOVÁ", color: "#a855f7", text: "CYKLUS" },
+                { name: "FIALOVÁ", color: "#a855f7", text: "CYKLUS" },
+                { name: "FIALOVÁ", color: "#a855f7", text: "CYKLUS" },
+
+                { name: "ŠEDÁ", color: "#64748b", text: "CYKLUS" },
+                { name: "ŠEDÁ", color: "#64748b", text: "CYKLUS" },
+                { name: "ŠEDÁ", color: "#64748b", text: "CYKLUS" },
+                { name: "ŠEDÁ", color: "#64748b", text: "CYKLUS" },
+
+                { name: "ORANŽOVÁ", color: "#f97316", text: "VNOŘENÝ" },
+                { name: "ORANŽOVÁ", color: "#f97316", text: "VNOŘENÝ" },
+                { name: "ORANŽOVÁ", color: "#f97316", text: "VNOŘENÝ" },
+                { name: "ORANŽOVÁ", color: "#f97316", text: "VNOŘENÝ" }
+            ];
+
+            crystalTokens.forEach(function(tok) {
+                const tokenEl = document.createElement('div');
+                tokenEl.style.width = "2.6cm";
+                tokenEl.style.height = "2.6cm";
+                tokenEl.style.borderRadius = "50%";
+                tokenEl.style.border = "1.5px dashed #333";
+                tokenEl.style.backgroundColor = tok.color;
+                tokenEl.style.display = "flex";
+                tokenEl.style.flexDirection = "column";
+                tokenEl.style.justifyContent = "center";
+                tokenEl.style.alignItems = "center";
+                tokenEl.style.color = "white";
+                tokenEl.style.textShadow = "1px 1px 2px rgba(0,0,0,0.8)";
+                tokenEl.style.boxSizing = "border-box";
+                tokenEl.style.margin = "auto";
+                tokenEl.style.padding = "4px";
+
+                tokenEl.innerHTML = '<span style="font-size: 7px; font-weight: bold; font-family: \'Orbitron\', sans-serif; letter-spacing: 0.5px; opacity: 0.9;">ROOT-X</span><span style="font-size: 10px; font-weight: bold; font-family: \'Times New Roman\', serif; margin: 2px 0;">' + tok.name + '</span><span style="font-size: 6px; font-weight: bold; font-family: \'Orbitron\', sans-serif; opacity: 0.8; letter-spacing: 0.5px;">' + tok.text + '</span>';
+                crystalsGrid.appendChild(tokenEl);
+            });
+
+            crystalsPage.appendChild(crystalsGrid);
+            printContainer.appendChild(crystalsPage);
+        }
+
+        // SBĚR AKTIVNÍCH KRYSTALŮ
+        function getPlacedCrystalsCount() {
+            let count = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const state = gridState[r][c];
+                    if (state === 'red' || state === 'green' || state === 'blue' || state === 'yellow' || state === 'purple' || state === 'orange' || state === 'gray' ||
+                        state === 'start_red' || state === 'start_green' || state === 'start_blue' || state === 'start_yellow' || state === 'start_purple' || state === 'start_orange' || state === 'start_gray') {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        function updateBatteryDisplay() {
+            try {
+                const placed = getPlacedCrystalsCount();
+                const pct = Math.min(100, (placed / totalLoopsAllowed) * 100);
+                
+                const bar = document.getElementById('battery-bar');
+                const txt = document.getElementById('telemetry-loop');
+                const label = document.getElementById('telemetry-loop-label');
+                
+                if (label) label.innerText = "PAMĚŤ:";
+                
+                if (bar && txt) {
+                    bar.style.width = pct + "%";
+                    if (placed <= totalLoopsAllowed) {
+                        bar.className = "h-full bg-emerald-500 transition-all duration-300";
+                    } else {
+                        bar.className = "h-full bg-rose-500 transition-all duration-300 animate-pulse";
+                    }
+                    txt.innerText = placed + " / " + totalLoopsAllowed + " úloh";
+                }
+            } catch (e) {
+                console.error("updateBatteryDisplay Error:", e);
+            }
+        }
+
+        function initGrid() {
+            try {
+                const gridEl = document.getElementById('simulation-grid');
+                if (!gridEl) return;
+                gridEl.innerHTML = '';
+                
+                gridEl.style.gridTemplateColumns = "repeat(" + COLS + ", minmax(0, 1fr))";
+                gridEl.style.gridTemplateRows = "repeat(" + ROWS + ", minmax(0, 1fr))";
+                
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const cell = document.createElement('div');
+                        cell.id = "cell-" + r + "-" + c;
+                        cell.className = "relative bg-slate-900/60 border border-slate-800/40 rounded flex flex-col justify-between p-1 cursor-pointer hover:bg-slate-800/40 transition-all aspect-square relative";
+                        cell.dataset.r = r;
+                        cell.dataset.c = c;
+                        
+                        cell.onclick = () => handleCellClick(r, c);
+                        cell.oncontextmenu = (e) => handleCellRightClick(e, r, c);
+                        
+                        const label = document.createElement('span');
+                        label.className = "text-[9px] text-slate-500 absolute top-1 left-1 font-bold z-10 select-none";
+                        label.innerText = getCoords(r, c);
+                        cell.appendChild(label);
+
+                        const content = document.createElement('div');
+                        content.id = "cell-content-" + r + "-" + c;
+                        content.className = "w-full h-full flex items-center justify-center absolute inset-0 z-0 pointer-events-none";
+                        cell.appendChild(content);
+
+                        const roverSlot = document.createElement('div');
+                        roverSlot.id = "cell-rover-slot-" + r + "-" + c;
+                        roverSlot.className = "w-full h-full flex items-center justify-center absolute inset-0 z-20 pointer-events-none";
+                        cell.appendChild(roverSlot);
+
+                        gridEl.appendChild(cell);
+                    }
+                }
+
+                updateGridVisuals();
+            } catch (e) {
+                console.error("initGrid Error:", e);
+            }
+        }
+
+        // Cyklování barev levým kliknutím
+        function handleCellClick(r, c) {
+            try {
+                if (isSimulating) return;
+
+                const current = gridState[r][c];
+
+                // SANDBOX EDITOR (Pokládání STARTu, CÍLE, a SKAL)
+                if (gameMode === 'sandbox') {
+                    if (activeSandboxTool === 'start') {
+                        // Smazat starý start
+                        for (let i = 0; i < ROWS; i++) {
+                            for (let j = 0; j < COLS; j++) {
+                                if (gridState[i][j] === 'start' || gridState[i][j].startsWith('start_')) {
+                                    gridState[i][j] = 'empty';
+                                }
+                            }
+                        }
+                        gridState[r][c] = 'start';
+                        startPos = { r, c };
+                        roverPos = { ...startPos };
+                        updateInitialDirectionFilters();
+                        playSound(523.25, 0.1);
+                        updateGridVisuals();
+                        return;
+                    } else if (activeSandboxTool === 'crew') {
+                        // Smazat starou posádku
+                        for (let i = 0; i < ROWS; i++) {
+                            for (let j = 0; j < COLS; j++) {
+                                if (gridState[i][j] === 'crew') {
+                                    gridState[i][j] = 'empty';
+                                }
+                            }
+                        }
+                        gridState[r][c] = 'crew';
+                        crewPos = { r, c };
+                        playSound(659.25, 0.1);
+                        updateGridVisuals();
+                        return;
+                    } else if (activeSandboxTool === 'wall') {
+                        if ((r === startPos.r && c === startPos.c) || (r === crewPos.r && c === crewPos.c)) return;
+                        if (current === 'wall') {
+                            gridState[r][c] = 'empty';
+                        } else {
+                            gridState[r][c] = 'wall';
+                        }
+                        playSound(400, 0.08);
+                        updateGridVisuals();
+                        return;
+                    }
+                }
+
+                // Běžná pokládka krystalů (Kampaň i Sandbox)
+                if (current === 'crew' || current === 'wall') return; 
+                const isStart = (r === startPos.r && c === startPos.c);
+
+                if (isStart) {
+                    let allowed = ['start'];
+                    if (colorAllowance.red) allowed.push('start_red');
+                    if (colorAllowance.green) allowed.push('start_green');
+                    if (colorAllowance.blue) allowed.push('start_blue');
+                    if (colorAllowance.yellow) allowed.push('start_yellow');
+                    if (colorAllowance.purple) allowed.push('start_purple');
+                    if (colorAllowance.orange) allowed.push('start_orange');
+                    if (colorAllowance.gray) allowed.push('start_gray');
+
+                    let nextIdx = (allowed.indexOf(current) + 1) % allowed.length;
+                    if (nextIdx < 0) nextIdx = 0;
+                    gridState[r][c] = allowed[nextIdx];
+                } else {
+                    let allowed = ['empty'];
+                    if (colorAllowance.red) allowed.push('red');
+                    if (colorAllowance.green) allowed.push('green');
+                    if (colorAllowance.blue) allowed.push('blue');
+                    if (colorAllowance.yellow) allowed.push('yellow');
+                    if (colorAllowance.purple) allowed.push('purple');
+                    if (colorAllowance.orange) allowed.push('orange');
+                    if (colorAllowance.gray) allowed.push('gray');
+
+                    let nextIdx = (allowed.indexOf(current) + 1) % allowed.length;
+                    if (nextIdx < 0) nextIdx = 0;
+                    gridState[r][c] = allowed[nextIdx];
+                }
+
+                playSound(700, 0.05);
+                updateGridVisuals();
+                updateBatteryDisplay();
+                buildPrintTiles();
+            } catch (e) {
+                console.error("handleCellClick Error:", e);
+            }
+        }
+
+        // Smazání krystalu pravým kliknutím
+        function handleCellRightClick(e, r, c) {
+            e.preventDefault();
+            if (isSimulating) return;
+
+            const current = gridState[r][c];
+            if (current === 'crew' || current === 'wall') return;
+
+            if (r === startPos.r && c === startPos.c) {
+                gridState[r][c] = 'start';
+            } else {
+                gridState[r][c] = 'empty';
+            }
+
+            playSound(400, 0.05, 'sawtooth');
+            updateGridVisuals();
+            updateBatteryDisplay();
+            buildPrintTiles();
+        }
+
+        function updateGridVisuals() {
+            try {
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const content = document.getElementById("cell-content-" + r + "-" + c);
+                        const cellEl = document.getElementById("cell-" + r + "-" + c);
+                        if (!content || !cellEl) continue;
+                        
+                        content.innerHTML = '';
+                        cellEl.className = "relative bg-slate-900/60 border border-slate-800/40 rounded flex flex-col justify-between p-1 cursor-pointer hover:bg-slate-800/40 transition-all aspect-square";
+
+                        const state = gridState[r][c];
+
+                        if (state === 'start' || (r === startPos.r && c === startPos.c)) {
+                            let innerCrystalHtml = "";
+                            
+                            if (state === 'start_red') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-red-500 bg-red-500/25 rounded-lg shadow-[0_0_10px_rgba(239,68,68,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else if (state === 'start_green') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-emerald-500 bg-emerald-500/25 rounded-lg shadow-[0_0_10px_rgba(16,185,129,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else if (state === 'start_blue') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-blue-500 bg-blue-500/25 rounded-lg shadow-[0_0_10px_rgba(59,130,246,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else if (state === 'start_yellow') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-yellow-500 bg-yellow-500/25 rounded-lg shadow-[0_0_10px_rgba(245,158,11,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else if (state === 'start_purple') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-purple-500 bg-purple-500/25 rounded-lg shadow-[0_0_10px_rgba(168,85,247,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else if (state === 'start_orange') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-orange-500 bg-orange-500/25 rounded-lg shadow-[0_0_10px_rgba(249,115,22,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else if (state === 'start_gray') {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border-2 border-slate-400 bg-slate-500/25 rounded-lg shadow-[0_0_10px_rgba(148,163,184,0.4)] flex items-end justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 mb-0.5 select-none font-serif">START</span></div>';
+                            } else {
+                                innerCrystalHtml = '<div class="absolute inset-1.5 border border-emerald-500/30 bg-emerald-500/5 rounded-lg flex items-center justify-center"><span class="text-[8px] font-bold text-emerald-400 opacity-60 select-none font-serif">START</span></div>';
+                            }
+                            content.innerHTML = innerCrystalHtml;
+                        } else if (state === 'crew') {
+                            content.innerHTML = '<div class="absolute inset-1 border-2 border-rose-500/50 bg-rose-500/10 rounded-lg flex items-center justify-center"><span class="text-lg font-bold text-rose-500 animate-pulse font-serif">✕</span></div>';
+                        } else if (state === 'wall') {
+                            cellEl.className = "relative bg-slate-950 border border-slate-800 rounded flex flex-col justify-between p-1 shadow-[inset_0_0_10px_rgba(0,0,0,0.9)] cursor-not-allowed aspect-square";
+                            content.innerHTML = `
+                                <div class="w-full h-full flex items-center justify-center bg-slate-950/90 rounded">
+                                    <svg class="w-4 h-4 text-slate-800" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a3 3 0 01-3-3V6zm3 2h3V5H6v3zm0 3h5V9H6v2z" clip-rule="evenodd"/></svg>
+                                </div>
+                            `;
+                        } else if (state === 'red') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-red-500 bg-red-500/25 rounded-lg shadow-[0_0_10px_rgba(239,68,68,0.4)]"></div>';
+                        } else if (state === 'green') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-emerald-500 bg-emerald-500/25 rounded-lg shadow-[0_0_10px_rgba(16,185,129,0.4)]"></div>';
+                        } else if (state === 'blue') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-blue-500 bg-blue-500/25 rounded-lg shadow-[0_0_10px_rgba(59,130,246,0.4)]"></div>';
+                        } else if (state === 'yellow') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-yellow-500 bg-yellow-500/25 rounded-lg shadow-[0_0_10px_rgba(245,158,11,0.4)]"></div>';
+                        } else if (state === 'purple') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-purple-500 bg-purple-500/25 rounded-lg shadow-[0_0_10px_rgba(168,85,247,0.4)]"></div>';
+                        } else if (state === 'orange') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-orange-500 bg-orange-500/25 rounded-lg shadow-[0_0_10px_rgba(249,115,22,0.4)]"></div>';
+                        } else if (state === 'gray') {
+                            content.innerHTML = '<div class="absolute inset-1.5 border-2 border-slate-400 bg-slate-500/25 rounded-lg shadow-[0_0_10px_rgba(148,163,184,0.4)]"></div>';
+                        }
+                    }
+                }
+                positionRoverOnGrid(roverPos.r, roverPos.c);
+            } catch (e) {
+                console.error("updateGridVisuals Error:", e);
+            }
+        }
+
+        function positionRoverOnGrid(r, c) {
+            const oldRover = document.getElementById('rover');
+            if (oldRover) {
+                oldRover.remove();
+            }
+
+            const targetSlot = document.getElementById("cell-rover-slot-" + r + "-" + c);
+            if (targetSlot) {
+                const rover = document.createElement('div');
+                rover.id = 'rover';
+                rover.className = "w-9 h-9 z-30 flex items-center justify-center pointer-events-none";
+                rover.innerHTML = `
+                    <div id="rover-visual" class="w-9 h-9 bg-slate-900/80 border-2 border-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.7)] transform transition-transform duration-300">
+                        <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+                        </svg>
+                        <div class="absolute bottom-1 w-2 h-2 bg-emerald-400 rounded-full border border-slate-950 shadow-[0_0_6px_rgba(16,185,129,0.8)]"></div>
+                    </div>
+                `;
+                targetSlot.appendChild(rover);
+                updateRoverRotation();
+            }
+            
+            const coord = document.getElementById('telemetry-coord');
+            if (coord) coord.innerText = getCoords(r, c);
+        }
+
+        function updateRoverRotation() {
+            const visual = document.getElementById('rover-visual');
+            if (visual) {
+                let deg = 0;
+                if (roverDir === 'N') deg = 0;
+                if (roverDir === 'E') deg = 90;
+                if (roverDir === 'S') deg = 180;
+                if (roverDir === 'W') deg = 270;
+                visual.style.transform = "rotate(" + deg + "deg)";
+            }
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function startSimulation() {
+            if (isSimulating) return;
+
+            // Kontrola přeplnění paměti úloh
+            const placedCount = getPlacedCrystalsCount();
+            if (placedCount > totalLoopsAllowed) {
+                playSound(150, 0.4, 'sawtooth');
+                const status = document.getElementById('telemetry-status');
+                if (status) {
+                    status.innerText = 'CHYBA: PŘEPLNĚNÁ PAMĚŤ!';
+                    status.className = 'text-rose-500 font-bold transition-all';
+                }
+                return;
+            }
+
+            // Sandbox kontrola: Musí existovat cesta k cíli (BFS)
+            if (gameMode === 'sandbox') {
+                if (!hasValidPath()) {
+                    playSound(150, 0.4, 'sawtooth');
+                    const status = document.getElementById('telemetry-status');
+                    if (status) {
+                        status.innerText = 'CHYBA: NEEXISTUJE CESTA K CÍLI!';
+                        status.className = 'text-rose-500 font-bold transition-all';
+                    }
+                    return;
+                }
+            }
+
+            // Krok 1: Kontrola naprogramování senzorů
+            const redAct = document.getElementById('action-red').value;
+            const greenAct = document.getElementById('action-green').value;
+            const blueAct = document.getElementById('action-blue').value;
+            const yellowAct = document.getElementById('action-yellow').value;
+
+            if (!redAct || !greenAct || !blueAct || !yellowAct) {
+                playSound(150, 0.4, 'sawtooth');
+                const status = document.getElementById('telemetry-status');
+                if (status) {
+                    status.innerText = 'CHYBA: NENAPROGRAMOVÁNO!';
+                    status.className = 'text-rose-500 font-bold transition-all';
+                }
+                
+                // Zvýraznění prázdného pole
+                const selects = ['red', 'green', 'blue', 'yellow'];
+                selects.forEach(color => {
+                    const sel = document.getElementById("action-" + color);
+                    if (sel && !sel.value) {
+                        sel.classList.add('border-rose-500', 'bg-rose-950/20');
+                        setTimeout(() => sel.classList.remove('border-rose-500', 'bg-rose-950/20'), 1500);
+                    }
+                });
+                return;
+            }
+
+            isSimulating = true;
+            roverPos = { ...startPos };
+            roverDir = 'N';
+            updateRoverRotation();
+
+            const loopInput = document.getElementById('loop-count');
+            totalLoopsAllowed = (loopInput ? parseInt(loopInput.value) : 15) || 15;
+            currentLoopCount = 0;
+
+            const status = document.getElementById('telemetry-status');
+            if (status) {
+                status.innerText = 'AKTIVNÍ (PRŮZKUM)';
+                status.className = 'text-emerald-400 font-bold transition-all';
+            }
+            updateBatteryDisplay();
+
+            playSound(587.33, 0.1);
+            setTimeout(() => playSound(698.46, 0.1), 120);
+
+            // Spuštění synchronního asynchronního cyklu herní smyčky
+            runSimulationLoop();
+        }
+
+        async function runSimulationLoop() {
+            while (isSimulating) {
+                await simulationStep();
+                if (!isSimulating) break;
+                await sleep(800);
+            }
+        }
+
+        async function simulationStep() {
+            // Kontrola vybití / přetečení kroků simulace (Bezpečnostní pojistka proti zacyklení)
+            if (currentLoopCount >= 50) {
+                playSound(220, 0.6, 'sawtooth');
+                const status = document.getElementById('telemetry-status');
+                if (status) {
+                    status.innerText = 'CHYBA - PROCESOR PŘETÍŽEN';
+                    status.className = 'text-amber-500 font-bold animate-pulse transition-all';
+                }
+                stopSimulation(false);
+                showBatteryModal();
+                return;
+            }
+
+            // Čtení krystalů ze současné pozice
+            let tileType = gridState[roverPos.r][roverPos.c];
+            
+            // Mapování startovních stavů na čisté barvy
+            if (tileType === 'start_red') tileType = 'red';
+            else if (tileType === 'start_green') tileType = 'green';
+            else if (tileType === 'start_blue') tileType = 'blue';
+            else if (tileType === 'start_yellow') tileType = 'yellow';
+            else if (tileType === 'start_purple') tileType = 'purple';
+            else if (tileType === 'start_orange') tileType = 'orange';
+            else if (tileType === 'start_gray') tileType = 'gray';
+            else if (tileType === 'start') tileType = 'empty';
+
+            const coord = document.getElementById('telemetry-coord');
+            if (coord) coord.innerText = getCoords(roverPos.r, roverPos.c);
+
+            const sensor = document.getElementById('telemetry-sensor');
+            
+            // PRAVIDLO CHYTRÉHO ZASTAVENÍ:
+            // Pokud rover stojí na dlaždici, kde NENÍ krystal, okamžitě a bezpečně zastaví!
+            if (tileType === 'red' || tileType === 'green' || tileType === 'blue' || tileType === 'yellow' || tileType === 'purple' || tileType === 'orange' || tileType === 'gray') {
+                if (sensor) sensor.innerText = "Detekce: " + tileType.toUpperCase();
+                
+                if (tileType === 'purple') {
+                    const action = document.getElementById('action-purple').value;
+                    const repeats = parseInt(document.getElementById('loop-purple').value) || 1;
+                    await executeCommandWithRepeats(action, repeats);
+                } else if (tileType === 'gray') {
+                    const action = document.getElementById('action-gray').value;
+                    const repeats = parseInt(document.getElementById('loop-gray').value) || 1;
+                    await executeCommandWithRepeats(action, repeats);
+                } else if (tileType === 'orange') {
+                    // Složený cyklus (Oranžová): 2 po sobě jodoucí cyklické příkazy s možností celkového vnějšího opakování
+                    const act1 = document.getElementById('action-orange-1').value;
+                    const rep1 = parseInt(document.getElementById('loop-orange-1').value) || 1;
+                    const act2 = document.getElementById('action-orange-2').value;
+                    const rep2 = parseInt(document.getElementById('loop-orange-2').value) || 1;
+                    const outerRepeats = parseInt(document.getElementById('loop-orange-outer').value) || 1;
+                    
+                    for (let loopIdx = 0; loopIdx < outerRepeats; loopIdx++) {
+                        if (!isSimulating || (roverPos.r === crewPos.r && roverPos.c === crewPos.c)) break;
+                        
+                        if (sensor) sensor.innerText = "Detekce: ORANŽOVÁ (CYKLUS " + (loopIdx + 1) + "/" + outerRepeats + " - KROK 1)";
+                        await executeCommandWithRepeats(act1, rep1);
+                        
+                        if (!isSimulating || (roverPos.r === crewPos.r && roverPos.c === crewPos.c)) break;
+                        
+                        if (sensor) sensor.innerText = "Detekce: ORANŽOVÁ (CYKLUS " + (loopIdx + 1) + "/" + outerRepeats + " - KROK 2)";
+                        await executeCommandWithRepeats(act2, rep2);
+                    }
+                } else {
+                    const selectElement = document.getElementById("action-" + tileType);
+                    const action = selectElement ? selectElement.value : 'forward';
+                    executeCommand(action);
+                    await sleep(200); // Krátká pauza na plynulou vizuální interpolaci standardního pohybu
+                }
+            } else {
+                // Na políčku není žádný krystal, robot bezpečně zastaví a simulace skončí
+                if (sensor) sensor.innerText = 'Chybí navigační krystal!';
+                const status = document.getElementById('telemetry-status');
+                if (status) {
+                    status.innerText = 'ZASTAVENO (KRYSTAL CHYBÍ)';
+                    status.className = 'text-amber-500 font-bold transition-all';
+                }
+                stopSimulation(false);
+                return;
+            }
+
+            currentLoopCount++;
+            updateBatteryDisplay();
+
+            // KROK DETEKCE CÍLE: Kontrola se provádí na synchronních souřadnicích ihned po dojezdu!
+            if (roverPos.r === crewPos.r && roverPos.c === crewPos.c) {
+                playSound(523.25, 0.1);
+                setTimeout(() => playSound(659.25, 0.1), 100);
+                setTimeout(() => playSound(783.99, 0.1), 200);
+                setTimeout(() => playSound(1046.50, 0.4), 300);
+
+                const status = document.getElementById('telemetry-status');
+                if (status) {
+                    status.innerText = 'POSÁDKA ZACHRÁNĚNA';
+                    status.className = 'text-emerald-400 font-bold transition-all';
+                }
+                stopSimulation(true);
+                showVictoryModal();
+            }
+        }
+
+        // Provedení příkazů s opakováním – plně synchronizované pomocí Promise
+        function executeCommandWithRepeats(action, repeats) {
+            return new Promise(async (resolve) => {
+                playSound(440, 0.15, 'triangle');
+                for (let count = 0; count < repeats; count++) {
+                    if (!isSimulating) break;
+
+                    if (action === 'forward') {
+                        moveForward();
+                    } else if (action === 'left') {
+                        if (roverDir === 'N') roverDir = 'W';
+                        else if (roverDir === 'W') roverDir = 'S';
+                        else if (roverDir === 'S') roverDir = 'E';
+                        else if (roverDir === 'E') roverDir = 'N';
+                        updateRoverRotation();
+                        moveForward();
+                    } else if (action === 'right') {
+                        if (roverDir === 'N') roverDir = 'E';
+                        else if (roverDir === 'E') roverDir = 'S';
+                        else if (roverDir === 'S') roverDir = 'W';
+                        else if (roverDir === 'W') roverDir = 'N';
+                        updateRoverRotation();
+                        moveForward();
+                    } else if (action === 'backward') {
+                        moveBackward();
+                    }
+
+                    // Pokud v průběhu cyklu došlo k havárii nebo zastavení, okamžitě ukončíme provádění
+                    if (!isSimulating) break;
+
+                    // Pokud v průběhu cyklu rover vjel přesně do cíle, ukončíme pohyb, abychom nepřejeli dál!
+                    if (roverPos.r === crewPos.r && roverPos.c === crewPos.c) {
+                        break;
+                    }
+
+                    await sleep(300); // Prodleva 300ms mezi sub-kroky cyklu
+                }
+                resolve();
+            });
+        }
+
+        function executeCommand(action) {
+            playSound(440, 0.15, 'triangle');
+            
+            if (action === 'forward') {
+                moveForward();
+            } else if (action === 'left') {
+                if (roverDir === 'N') roverDir = 'W';
+                else if (roverDir === 'W') roverDir = 'S';
+                else if (roverDir === 'S') roverDir = 'E';
+                else if (roverDir === 'E') roverDir = 'N';
+                updateRoverRotation();
+                moveForward();
+            } else if (action === 'right') {
+                if (roverDir === 'N') roverDir = 'E';
+                else if (roverDir === 'E') roverDir = 'S';
+                else if (roverDir === 'S') roverDir = 'W';
+                else if (roverDir === 'W') roverDir = 'N';
+                updateRoverRotation();
+                moveForward();
+            } else if (action === 'backward') {
+                moveBackward();
+            }
+        }
+
+        function moveForward() {
+            let target = { ...roverPos };
+            if (roverDir === 'N') target.r -= 1;
+            if (roverDir === 'S') target.r += 1;
+            if (roverDir === 'E') target.c += 1;
+            if (roverDir === 'W') target.c -= 1;
+
+            checkAndExecuteMove(target);
+        }
+
+        function moveBackward() {
+            let target = { ...roverPos };
+            if (roverDir === 'N') target.r += 1;
+            if (roverDir === 'S') target.r -= 1;
+            if (roverDir === 'E') target.c -= 1;
+            if (roverDir === 'W') target.c += 1;
+
+            checkAndExecuteMove(target);
+        }
+
+        function checkAndExecuteMove(target) {
+            if (target.r < 0 || target.r >= ROWS || target.c < 0 || target.c >= COLS) {
+                triggerCrash("Mimo mapu");
+                return;
+            }
+
+            if (gridState[target.r][target.c] === 'wall') {
+                triggerCrash("Srážka se stěnou");
+                return;
+            }
+
+            roverPos = target;
+            positionRoverOnGrid(roverPos.r, roverPos.c);
+        }
+
+        function triggerCrash(reason) {
+            playSound(130, 0.6, 'sawtooth');
+            const status = document.getElementById('telemetry-status');
+            if (status) {
+                status.innerText = "HAVÁRIE (" + reason.toUpperCase() + ")";
+                status.className = 'text-rose-500 font-bold animate-pulse transition-all';
+            }
+            stopSimulation(false);
+            showCrashModal();
+        }
+
+        function stopSimulation(success) {
+            clearInterval(simInterval);
+            isSimulating = false;
+        }
+
+        // TLAČÍTKO "Vrátit na start" (Druhé tlačítko pod mapou): Vrátí vozítko, ale PONECHÁ krystaly
+        function resetSimulation() {
+            stopSimulation(false);
+            roverPos = { ...startPos };
+            roverDir = 'N';
+            updateRoverRotation();
+            positionRoverOnGrid(startPos.r, startPos.c);
+
+            const status = document.getElementById('telemetry-status');
+            if (status) {
+                status.innerText = 'NEAKTIVNÍ';
+                status.className = 'text-red-400 font-bold transition-all';
+            }
+            
+            const sensor = document.getElementById('telemetry-sensor');
+            if (sensor) {
+                sensor.innerText = 'Bez signálu';
+                sensor.className = 'text-slate-400 transition-all';
+            }
+            
+            currentLoopCount = 0;
+            updateBatteryDisplay();
+            playSound(440, 0.1);
+        }
+
+        // TLAČÍTKO "Reset Sektoru" (Třetí tlačítko pod mapou): Vymaže všechny krystaly a vrátí na start
+        function clearCurrentSector() {
+            stopSimulation(false);
+            // Smazat všechny krystaly z mřížky
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const state = gridState[r][c];
+                    if (state !== 'wall' && state !== 'crew') {
+                        if (r === startPos.r && c === startPos.c) {
+                            gridState[r][c] = 'start';
+                        } else {
+                            gridState[r][c] = 'empty';
+                        }
+                    }
+                }
+            }
+            roverPos = { ...startPos };
+            roverDir = 'N';
+            updateRoverRotation();
+            initGrid(); // Kompletně překreslit mřížku pro vizuální čistotu
+            updateBatteryDisplay();
+            
+            const status = document.getElementById('telemetry-status');
+            if (status) {
+                status.innerText = 'NEAKTIVNÍ';
+                status.className = 'text-red-400 font-bold transition-all';
+            }
+            
+            const sensor = document.getElementById('telemetry-sensor');
+            if (sensor) {
+                sensor.innerText = 'Bez signálu';
+                sensor.className = 'text-slate-400 transition-all';
+            }
+            
+            currentLoopCount = 0;
+            playSound(300, 0.2, 'sawtooth');
+        }
+
+        // FUNKCE PRO VÝBĚR AKTIVNÍHO KRESLICÍHO NÁSTROJE V SANDBOXU
+        function setSandboxTool(tool) {
+            activeSandboxTool = tool;
+            const startBtn = document.getElementById('tool-start');
+            const crewBtn = document.getElementById('tool-crew');
+            const wallBtn = document.getElementById('tool-wall');
+            const desc = document.getElementById('tool-desc');
+
+            if (startBtn) startBtn.className = "p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif";
+            if (crewBtn) crewBtn.className = "p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif";
+            if (wallBtn) wallBtn.className = "p-2 rounded bg-slate-950 border border-slate-800 text-xs uppercase text-slate-400 font-bold transition-all font-serif";
+
+            const activeBtn = document.getElementById("tool-" + tool);
+            if (activeBtn) activeBtn.className = "p-2 rounded bg-amber-950 border-2 border-amber-500 text-xs uppercase text-amber-400 font-bold transition-all";
+
+            if (desc) {
+                if (tool === 'start') desc.innerText = "Aktivní prvek: Kliknutím do mapy přesunete startovní pozici vozidla. (Pouze jednou)";
+                else if (tool === 'crew') desc.innerText = "Aktivní prvek: Kliknutím do mapy přesunete ztracenou posádku. (Pouze jednou)";
+                else desc.innerText = "Aktivní prvek: Klikáním na mřížku kreslíte/mažete neprostupné černé jeskynní zdi.";
+            }
+        }
+
+        function showVictoryModal() {
+            const modal = document.getElementById('victory-modal');
+            if (!modal) return;
+
+            const descText = modal.querySelector('p');
+            const titleText = modal.querySelector('h2');
+            const nextBtn = document.getElementById('next-level-btn');
+            const stayBtn = modal.querySelector('button');
+
+            if (currentLevel === 4 && gameMode === "campaign") {
+                if (titleText) titleText.innerText = "🚨 KAMPAŇ DOKONČENA! 🚨";
+                if (descText) {
+                    descText.innerHTML = "Gratuluji! Úspěšně jsi zachránil celou ztracenou posádku z vědecké lodi <strong class=\"text-cyan-400 font-bold\">Astraea</strong>! Vyčistil jsi všechny nebezpečné jeskynní Sektory a zprovoznil nouzový modul. Jsi absolutní záchranářskou legendou planety Xylos-7!";
+                }
+                if (stayBtn) {
+                    stayBtn.innerText = "RESTARTOVAT KAMPAŇ";
+                    stayBtn.onclick = function() {
+                        modal.classList.add('hidden');
+                        selectLevel(1);
+                    };
+                }
+                if (nextBtn) {
+                    nextBtn.innerText = "TVOŘIT V SANDBOXU";
+                    nextBtn.onclick = function() {
+                        modal.classList.add('hidden');
+                        resetSimulation();
+                        openSandboxSetup();
+                    };
+                }
+            } else if (gameMode === "custom_play") {
+                if (titleText) titleText.innerText = "VLASTNÍ SEKTOR VYŘEŠEN!";
+                if (descText) {
+                    descText.innerHTML = "Vozítko <strong class=\"text-cyan-400 font-bold\">" + vehicleName + "</strong> úspěšně prošlo jeskynní plán, který jste sami navrhli! Gratulujeme k úspěšné simulaci.";
+                }
+                if (stayBtn) {
+                    stayBtn.innerText = "UPRAVIT MAPU (EDITOR)";
+                    stayBtn.onclick = function() {
+                        modal.classList.add('hidden');
+                        resetSimulation();
+                        startSandbox(ROWS);
+                    };
+                }
+                if (nextBtn) {
+                    nextBtn.innerText = "ZPĚT NA REŽIMY";
+                    nextBtn.onclick = function() {
+                        modal.classList.add('hidden');
+                        resetSimulation();
+                        backToModeSelect();
+                    };
+                }
+            } else {
+                if (titleText) titleText.innerText = "MISE DOKONČENA!";
+                if (descText) {
+                    descText.innerHTML = "Vozítko <strong class=\"text-cyan-400 font-bold\">" + vehicleName + "</strong> úspěšně prošlo labyrintem a dosáhlo nouzového modulu. Nyní musíte nalézt další posádku v těžším Sektoru!";
+                }
+                if (stayBtn) {
+                    stayBtn.innerText = "Zůstat v tomto levelu";
+                    stayBtn.onclick = closeVictoryModal;
+                }
+                if (nextBtn) {
+                    nextBtn.innerText = "Další Sektor";
+                    nextBtn.onclick = goToNextLevel;
+                }
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeVictoryModal() {
+            const modal = document.getElementById('victory-modal');
+            if (modal) modal.classList.add('hidden');
+            
+            resetSimulation();
+        }
+
+        function goToNextLevel() {
+            const modal = document.getElementById('victory-modal');
+            if (modal) modal.classList.add('hidden');
+            
+            if (currentLevel < 4) {
+                selectLevel(currentLevel + 1);
+            }
+        }
+
+        function showCrashModal() {
+            const modal = document.getElementById('crash-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function showBatteryModal() {
+            const modal = document.getElementById('battery-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function handleCrashRestart() {
+            const crashModal = document.getElementById('crash-modal');
+            if (crashModal) crashModal.classList.add('hidden');
+            
+            const batteryModal = document.getElementById('battery-modal');
+            if (batteryModal) batteryModal.classList.add('hidden');
+            
+            resetSimulation();
+        }
+
+        window.onload = function() {
+            const intro = document.getElementById('intro-modal');
+            if (intro) intro.style.display = 'flex';
+        };
+    </script>
+</body>
+</html>
